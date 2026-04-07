@@ -206,7 +206,7 @@ function _renderGraficos(d) {
   // Top vendedores (horizontal bar)
   if (d.top_vendedores.length) {
     criarOuAtualizar("chart-vendedores", "bar", {
-      labels: d.top_vendedores.map(x => x.nome.split(" ")[0]),
+      labels: d.top_vendedores.map(x => _abreviarNome(x.nome)),
       datasets: [{
         data: d.top_vendedores.map(x => x.total),
         backgroundColor: "rgba(167,139,250,0.6)",
@@ -253,6 +253,17 @@ function _atualizarFiltrosBar(filtros) {
       toggleFiltro(tipo, valor);
     });
   });
+}
+
+/**
+ * Abrevia nome completo para exibição em gráficos.
+ * "RODRIGO AUGUSTO TEIXEIRA DOS SANTOS" → "RODRIGO SANTOS"
+ */
+function _abreviarNome(nome) {
+  if (!nome) return "";
+  const partes = nome.trim().split(/\s+/);
+  if (partes.length <= 2) return nome;
+  return `${partes[0]} ${partes[partes.length - 1]}`;
 }
 
 function _fmtData(s) {

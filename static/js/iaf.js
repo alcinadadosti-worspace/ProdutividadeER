@@ -151,7 +151,7 @@ function _renderGraficosIaf(d) {
   if (d.iaf_cabelos.top_vendedores?.length) {
     const tv = d.iaf_cabelos.top_vendedores.slice(0, 8);
     criarOuAtualizar("chart-cabelos-vend", "bar", {
-      labels: tv.map(x => x.nome.split(" ")[0]),
+      labels: tv.map(x => _abreviarNome(x.nome)),
       datasets: [{
         data: tv.map(x => x.total),
         backgroundColor: "rgba(108,158,255,0.55)",
@@ -180,7 +180,7 @@ function _renderGraficosIaf(d) {
   if (d.iaf_make.top_vendedores?.length) {
     const tv = d.iaf_make.top_vendedores.slice(0, 8);
     criarOuAtualizar("chart-make-vend", "bar", {
-      labels: tv.map(x => x.nome.split(" ")[0]),
+      labels: tv.map(x => _abreviarNome(x.nome)),
       datasets: [{
         data: tv.map(x => x.total),
         backgroundColor: "rgba(167,139,250,0.55)",
