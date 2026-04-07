@@ -154,9 +154,16 @@ function criarOuAtualizar(canvasId, tipo, dados, opcoes) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return null;
 
+  // Destruir instância anterior com segurança (canvas pode ter sido removido do DOM)
   if (_chartInstances[canvasId]) {
-    _chartInstances[canvasId].destroy();
+    try { _chartInstances[canvasId].destroy(); } catch (_) {}
     delete _chartInstances[canvasId];
+  }
+
+  // Limpar qualquer instância Chart.js travada no canvas via API interna
+  const existing = Chart.getChart(canvas);
+  if (existing) {
+    try { existing.destroy(); } catch (_) {}
   }
 
   const chart = new Chart(canvas, { type: tipo, data: dados, options: opcoes });
@@ -170,7 +177,7 @@ function criarOuAtualizar(canvasId, tipo, dados, opcoes) {
 function destruirGraficos(...ids) {
   ids.forEach(id => {
     if (_chartInstances[id]) {
-      _chartInstances[id].destroy();
+      try { _chartInstances[id].destroy(); } catch (_) {}
       delete _chartInstances[id];
     }
   });

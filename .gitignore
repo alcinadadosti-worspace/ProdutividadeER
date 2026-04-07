@@ -10,4 +10,5 @@ build/
 .venv/
 venv/
 _upload_tmp.xlsx
+_state.json
 *.db-journal

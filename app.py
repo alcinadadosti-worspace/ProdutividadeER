@@ -18,11 +18,14 @@ from cruzamento import criar_indices, cruzar_vendas
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 
-# ─── Estado em memória ────────────────────────────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(__file__), "produtos.db")
+# ─── Caminhos ─────────────────────────────────────────────────────────────────
+BASE_DIR   = os.path.dirname(__file__)
+DB_PATH    = os.path.join(BASE_DIR, "produtos.db")
+STATE_FILE = os.path.join(BASE_DIR, "_state.json")   # persistência em disco
 
+# ─── Estado em memória ────────────────────────────────────────────────────────
 _estado = {
-    "vendas": [],           # Lista de dicts com todos os dados processados
+    "vendas": [],
     "arquivo_nome": None,
     "processado_em": None,
     "indice_produtos": None,
@@ -30,10 +33,44 @@ _estado = {
 }
 
 
+def _salvar_estado():
+    """Persiste vendas e metadados em disco para sobreviver reinicializações."""
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "vendas": _estado["vendas"],
+                "arquivo_nome": _estado["arquivo_nome"],
+                "processado_em": _estado["processado_em"],
+            }, f, ensure_ascii=False)
+    except Exception as e:
+        app.logger.warning(f"Não foi possível salvar estado: {e}")
+
+
+def _carregar_estado_disco():
+    """Carrega estado salvo em disco ao iniciar (se existir)."""
+    if not os.path.exists(STATE_FILE):
+        return
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        _estado["vendas"]        = data.get("vendas", [])
+        _estado["arquivo_nome"]  = data.get("arquivo_nome")
+        _estado["processado_em"] = data.get("processado_em")
+        if _estado["vendas"]:
+            app.logger.info(f"Estado restaurado: {len(_estado['vendas'])} registros")
+    except Exception as e:
+        app.logger.warning(f"Não foi possível carregar estado do disco: {e}")
+
+
 def _carregar_indices():
     if _estado["indice_produtos"] is None or _estado["indice_iaf"] is None:
         _estado["indice_produtos"], _estado["indice_iaf"] = criar_indices(DB_PATH)
     return _estado["indice_produtos"], _estado["indice_iaf"]
+
+
+# Carregar estado salvo ao iniciar
+with app.app_context():
+    _carregar_estado_disco()
 
 
 # ─── Helpers de filtro ────────────────────────────────────────────────────────
@@ -119,6 +156,7 @@ def processar():
         _estado["vendas"] = vendas
         _estado["arquivo_nome"] = nome_arquivo
         _estado["processado_em"] = datetime.now().isoformat()
+        _salvar_estado()
 
         return jsonify({
             "ok": True,
