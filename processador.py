@@ -2,6 +2,7 @@
 processador.py — Leitura e normalização da planilha de vendas
 """
 
+import os
 import re
 import unicodedata
 import pandas as pd
@@ -115,7 +116,7 @@ def _parse_valor(valor):
 
 
 def _ler_todas_abas(caminho_arquivo):
-    """Lê todas as abas do arquivo e retorna DataFrame concatenado."""
+    """Lê todas as abas do arquivo Excel e retorna DataFrame concatenado."""
     abas = pd.read_excel(caminho_arquivo, sheet_name=None, dtype=str, engine="openpyxl")
     frames = []
     for df_aba in abas.values():
@@ -125,6 +126,29 @@ def _ler_todas_abas(caminho_arquivo):
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _ler_csv(caminho_arquivo):
+    """Lê arquivo CSV detectando encoding e separador automaticamente."""
+    for encoding in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:
+        try:
+            df = pd.read_csv(
+                caminho_arquivo, dtype=str, encoding=encoding,
+                sep=None, engine="python", on_bad_lines="skip"
+            )
+            df = df.dropna(how="all")
+            return df
+        except Exception:
+            continue
+    raise ValueError("Não foi possível ler o arquivo CSV. Verifique o encoding.")
+
+
+def _ler_arquivo(caminho_arquivo):
+    """Detecta o formato pelo nome do arquivo e retorna DataFrame."""
+    ext = os.path.splitext(caminho_arquivo)[1].lower()
+    if ext == ".csv":
+        return _ler_csv(caminho_arquivo)
+    return _ler_todas_abas(caminho_arquivo)
 
 
 def _mapear_colunas(df):
@@ -151,10 +175,10 @@ def _mapear_colunas(df):
 
 def ler_planilha(caminho_arquivo):
     """
-    Lê todas as abas da planilha e retorna lista de dicionários normalizados.
+    Lê planilha Excel (todas as abas) ou CSV e retorna lista de dicionários normalizados.
     Retorna: (lista_de_vendas, lista_colunas_encontradas, total_linhas)
     """
-    df = _ler_todas_abas(caminho_arquivo)
+    df = _ler_arquivo(caminho_arquivo)
     if df.empty:
         return [], [], 0
 

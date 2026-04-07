@@ -125,11 +125,12 @@ def upload():
         return jsonify({"erro": "Nenhum arquivo enviado"}), 400
 
     arquivo = request.files["file"]
-    if not arquivo.filename.endswith((".xlsx", ".xls")):
-        return jsonify({"erro": "Formato inválido. Envie um arquivo .xlsx"}), 400
+    ext = os.path.splitext(arquivo.filename)[1].lower()
+    if ext not in (".xlsx", ".xls", ".csv"):
+        return jsonify({"erro": "Formato inválido. Envie um arquivo .xlsx ou .csv"}), 400
 
-    # Salvar temporariamente
-    tmp_path = os.path.join(os.path.dirname(__file__), "_upload_tmp.xlsx")
+    # Salvar temporariamente preservando a extensão (processador detecta pelo nome)
+    tmp_path = os.path.join(os.path.dirname(__file__), f"_upload_tmp{ext}")
     arquivo.save(tmp_path)
 
     try:
@@ -148,8 +149,14 @@ def upload():
 @app.route("/api/processar", methods=["POST"])
 def processar():
     """Processa o arquivo temporário já uploadado."""
-    tmp_path = os.path.join(os.path.dirname(__file__), "_upload_tmp.xlsx")
-    if not os.path.exists(tmp_path):
+    base = os.path.dirname(__file__)
+    tmp_path = None
+    for ext in (".xlsx", ".xls", ".csv"):
+        candidate = os.path.join(base, f"_upload_tmp{ext}")
+        if os.path.exists(candidate):
+            tmp_path = candidate
+            break
+    if not tmp_path:
         return jsonify({"erro": "Nenhum arquivo para processar. Faça o upload primeiro."}), 400
 
     nome_arquivo = request.json.get("arquivo_nome", "planilha.xlsx") if request.is_json else "planilha.xlsx"

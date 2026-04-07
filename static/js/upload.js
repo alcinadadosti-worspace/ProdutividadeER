@@ -10,11 +10,11 @@ function renderUpload() {
     <div class="upload-page">
       <div class="upload-hero">
         <h1>Importar Planilha de Vendas</h1>
-        <p>Arraste seu arquivo .xlsx ou clique para selecionar</p>
+        <p>Arraste seu arquivo .xlsx ou .csv ou clique para selecionar</p>
       </div>
 
       <div class="drop-zone" id="drop-zone">
-        <input type="file" id="file-input" accept=".xlsx,.xls" />
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" />
         <div class="drop-icon">
           <i data-lucide="file-spreadsheet"></i>
         </div>
@@ -23,6 +23,7 @@ function renderUpload() {
         <div class="drop-formats">
           <span class="format-chip">.xlsx</span>
           <span class="format-chip">.xls</span>
+          <span class="format-chip">.csv</span>
         </div>
       </div>
 
@@ -96,8 +97,8 @@ function _bindDropZone() {
 }
 
 async function _handleFile(file) {
-  if (!file.name.match(/\.(xlsx|xls)$/i)) {
-    showToast("Formato inválido. Envie um arquivo .xlsx", "error");
+  if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+    showToast("Formato inválido. Envie um arquivo .xlsx ou .csv", "error");
     return;
   }
 
