@@ -2,6 +2,8 @@
  * iaf.js — Tela de Análise IAF detalhada
  */
 
+let _iafData = null;
+
 async function renderIaf() {
   const page = document.getElementById("page-iaf");
   page.innerHTML = `
@@ -16,8 +18,9 @@ async function renderIaf() {
   try {
     const params = new URLSearchParams(window.APP_FILTROS || {});
     const res = await fetch("/api/iaf?" + params.toString());
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.erro || "Erro");
+    _iafData = await res.json();
+    if (!res.ok) throw new Error(_iafData.erro || "Erro");
+    const d = _iafData;
 
     const totalIaf = (d.iaf_cabelos.total || 0) + (d.iaf_make.total || 0);
     const pctIafTotal = d.total_geral ? (totalIaf / d.total_geral * 100) : 0;
@@ -123,7 +126,7 @@ async function renderIaf() {
   }
 
   try {
-    _renderGraficosIaf(d);
+    _renderGraficosIaf(_iafData);
   } catch (err) {
     console.error("[IAF] Erro ao renderizar gráficos:", err);
   }
