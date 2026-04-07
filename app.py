@@ -174,6 +174,22 @@ def processar():
         return jsonify({"erro": f"Erro no processamento: {str(e)}", "detalhe": traceback.format_exc()}), 500
 
 
+@app.route("/api/limpar", methods=["POST"])
+def limpar():
+    """Remove todos os dados processados e reseta o estado."""
+    _estado["vendas"] = []
+    _estado["arquivo_nome"] = None
+    _estado["processado_em"] = None
+    _estado["indice_produtos"] = None
+    _estado["indice_iaf"] = None
+    try:
+        if os.path.exists(STATE_FILE):
+            os.remove(STATE_FILE)
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+
 @app.route("/api/status")
 def status():
     """Retorna status atual do processamento."""

@@ -57,6 +57,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // Bind limpar planilha
+  document.getElementById("btn-limpar-planilha")?.addEventListener("click", limparPlanilha);
+
   // Bind limpar filtros
   document.getElementById("btn-limpar-filtros")?.addEventListener("click", () => {
     window.APP_FILTROS = {};
@@ -142,7 +145,28 @@ function atualizarStatusBadge(total) {
   const text  = document.getElementById("status-text");
   if (badge) badge.className = "status-badge status-ok";
   if (text)  text.textContent = `${fmtNum(total)} registros`;
+  document.getElementById("btn-limpar-planilha")?.classList.remove("hidden");
   lucide.createIcons();
+}
+
+// ─── Limpar planilha ───────────────────────────────────────────────────────
+async function limparPlanilha() {
+  try {
+    await fetch("/api/limpar", { method: "POST" });
+  } catch (_) {}
+
+  _temDados = false;
+  window.APP_FILTROS = {};
+
+  const badge = document.getElementById("status-badge");
+  const text  = document.getElementById("status-text");
+  if (badge) badge.className = "status-badge status-empty";
+  if (text)  text.textContent = "Sem dados";
+  document.getElementById("btn-limpar-planilha")?.classList.add("hidden");
+  document.getElementById("btn-limpar-filtros")?.classList.add("hidden");
+
+  lucide.createIcons();
+  navegarPara("upload");
 }
 
 // ─── Drawer vendedor ──────────────────────────────────────────────────────
