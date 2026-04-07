@@ -68,6 +68,12 @@ def _carregar_indices():
     return _estado["indice_produtos"], _estado["indice_iaf"]
 
 
+def _garantir_estado():
+    """Se a memória está vazia, tenta recarregar do disco (resiliência a reinicializações)."""
+    if not _estado["vendas"] and os.path.exists(STATE_FILE):
+        _carregar_estado_disco()
+
+
 # Carregar estado salvo ao iniciar
 with app.app_context():
     _carregar_estado_disco()
@@ -171,6 +177,7 @@ def processar():
 @app.route("/api/status")
 def status():
     """Retorna status atual do processamento."""
+    _garantir_estado()
     vendas = _estado["vendas"]
     return jsonify({
         "tem_dados": len(vendas) > 0,
@@ -183,6 +190,7 @@ def status():
 @app.route("/api/dashboard")
 def dashboard():
     """KPIs e dados agregados para o dashboard principal."""
+    _garantir_estado()
     vendas = _aplicar_filtros(_estado["vendas"], request.args)
 
     if not vendas:
@@ -283,6 +291,7 @@ def _dashboard_vazio():
 @app.route("/api/vendedores")
 def vendedores():
     """Lista de vendedores com métricas."""
+    _garantir_estado()
     vendas = _aplicar_filtros(_estado["vendas"], request.args)
 
     metricas = defaultdict(lambda: {
@@ -377,6 +386,7 @@ def vendedor_detalhe(codigo):
 @app.route("/api/produtos")
 def produtos():
     """Lista de produtos com métricas."""
+    _garantir_estado()
     vendas = _aplicar_filtros(_estado["vendas"], request.args)
 
     metricas = defaultdict(lambda: {
@@ -405,6 +415,7 @@ def produtos():
 @app.route("/api/iaf")
 def iaf():
     """Dados detalhados de análise IAF."""
+    _garantir_estado()
     vendas = _aplicar_filtros(_estado["vendas"], request.args)
 
     total_geral = sum(_safe_float(v["TotalPraticado"]) for v in vendas)
@@ -463,6 +474,7 @@ def iaf():
 @app.route("/api/dados")
 def dados():
     """Dados brutos paginados."""
+    _garantir_estado()
     vendas = _aplicar_filtros(_estado["vendas"], request.args)
 
     # Busca global

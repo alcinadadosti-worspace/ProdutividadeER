@@ -170,7 +170,7 @@ def ler_planilha(caminho_arquivo):
                   "CodigoUsuarioCriacao", "UsuarioCriacao",
                   "CodigoUsuarioFinalizacao", "UsuarioFinalizacao"]:
         if campo in df_filtrado.columns:
-            df_filtrado[campo] = df_filtrado[campo].replace("nan", pd.NA).ffill()
+            df_filtrado.loc[:, campo] = df_filtrado[campo].replace("nan", pd.NA).ffill()
 
     # Fallback: se CodigoVendedor ainda vazio, usar UsuarioCriacao (é quem criou o pedido = vendedor)
     if "CodigoVendedor" in df_filtrado.columns and "CodigoUsuarioCriacao" in df_filtrado.columns:
