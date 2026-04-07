@@ -80,15 +80,34 @@ def _parse_data(valor):
     return s
 
 
+def _ler_todas_abas(caminho_arquivo):
+    """
+    Lê todas as abas do arquivo .xlsx e retorna um único DataFrame concatenado.
+    """
+    abas = pd.read_excel(caminho_arquivo, sheet_name=None, dtype=str, engine="openpyxl")
+
+    frames = []
+    for nome_aba, df_aba in abas.items():
+        df_aba = df_aba.dropna(how="all")
+        if not df_aba.empty:
+            frames.append(df_aba)
+
+    if not frames:
+        return pd.DataFrame()
+
+    # Concatenar todas as abas — alinha pelas colunas em comum
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
 def ler_planilha(caminho_arquivo):
     """
-    Lê a planilha .xlsx e retorna lista de dicionários normalizados.
+    Lê todas as abas da planilha .xlsx e retorna lista de dicionários normalizados.
     Retorna: (lista_de_vendas, lista_colunas_encontradas, total_linhas)
     """
-    df = pd.read_excel(caminho_arquivo, dtype=str, engine="openpyxl")
+    df = _ler_todas_abas(caminho_arquivo)
 
-    # Remover colunas e linhas completamente vazias
-    df = df.dropna(how="all")
+    if df.empty:
+        return [], [], 0
 
     # Mapear apenas as colunas que existem na planilha
     colunas_presentes = {}
