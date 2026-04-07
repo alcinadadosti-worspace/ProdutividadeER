@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grupo Alcina Maria — Análise de Vendas</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <!-- Chart.js Date Adapter -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <span class="logo-icon">◈</span>
+          <div class="logo-text">
+            <span class="logo-title">Alcina Maria</span>
+            <span class="logo-sub">Análise de Vendas</span>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#upload" class="nav-item" data-page="upload">
+          <i data-lucide="upload-cloud"></i>
+          <span>Importar Dados</span>
+        </a>
+        <a href="#dashboard" class="nav-item" data-page="dashboard">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="#vendedores" class="nav-item" data-page="vendedores">
+          <i data-lucide="users"></i>
+          <span>Vendedores</span>
+        </a>
+        <a href="#produtos" class="nav-item" data-page="produtos">
+          <i data-lucide="package"></i>
+          <span>Produtos</span>
+        </a>
+        <a href="#iaf" class="nav-item" data-page="iaf">
+          <i data-lucide="bar-chart-2"></i>
+          <span>Análise IAF</span>
+        </a>
+        <a href="#dados" class="nav-item" data-page="dados">
+          <i data-lucide="table"></i>
+          <span>Dados Brutos</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="status-badge" class="status-badge status-empty">
+          <i data-lucide="database"></i>
+          <span id="status-text">Sem dados</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main Content ──────────────────────────────────────────────────── -->
+    <main id="main-content" class="main-content">
+
+      <!-- Filtros globais (visíveis apenas fora do upload) -->
+      <div id="filtros-bar" class="filtros-bar hidden">
+        <div class="filtros-inner">
+          <span class="filtros-label">Filtros:</span>
+          <div id="filtros-ciclo" class="filtros-group"></div>
+          <div class="filtros-sep"></div>
+          <div id="filtros-unidade" class="filtros-group"></div>
+          <div class="filtros-sep"></div>
+          <div id="filtros-iaf" class="filtros-group"></div>
+          <button id="btn-limpar-filtros" class="btn-ghost btn-sm hidden">
+            <i data-lucide="x"></i> Limpar
+          </button>
+        </div>
+      </div>
+
+      <!-- Páginas -->
+      <div id="page-upload" class="page"></div>
+      <div id="page-dashboard" class="page hidden"></div>
+      <div id="page-vendedores" class="page hidden"></div>
+      <div id="page-produtos" class="page hidden"></div>
+      <div id="page-iaf" class="page hidden"></div>
+      <div id="page-dados" class="page hidden"></div>
+
+    </main>
+
+    <!-- ── Painel Lateral Vendedor ──────────────────────────────────────── -->
+    <div id="drawer-overlay" class="drawer-overlay hidden"></div>
+    <aside id="vendedor-drawer" class="vendedor-drawer hidden">
+      <div class="drawer-header">
+        <div>
+          <div id="drawer-nome" class="drawer-nome"></div>
+          <div id="drawer-codigo" class="drawer-codigo"></div>
+        </div>
+        <button id="drawer-close" class="btn-icon">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div id="drawer-content" class="drawer-content"></div>
+    </aside>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="/static/js/charts.js"></script>
+  <script src="/static/js/upload.js"></script>
+  <script src="/static/js/dashboard.js"></script>
+  <script src="/static/js/vendedores.js"></script>
+  <script src="/static/js/produtos.js"></script>
+  <script src="/static/js/iaf.js"></script>
+  <script src="/static/js/dados.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
