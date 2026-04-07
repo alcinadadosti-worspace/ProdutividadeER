@@ -18,11 +18,19 @@ async function renderDashboard() {
 
     page.innerHTML = _templateDashboard(_dashData);
     lucide.createIcons();
-    _renderGraficos(_dashData);
     _atualizarFiltrosBar(_dashData.filtros);
   } catch (err) {
+    console.error("[Dashboard] Erro ao carregar:", err);
     page.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${err.message}</p></div>`;
     lucide.createIcons();
+    return;
+  }
+
+  // Gráficos em try-catch separado: erros aqui não apagam KPIs já renderizados
+  try {
+    _renderGraficos(_dashData);
+  } catch (err) {
+    console.error("[Dashboard] Erro ao renderizar gráficos:", err);
   }
 }
 

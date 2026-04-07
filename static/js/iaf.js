@@ -114,11 +114,18 @@ async function renderIaf() {
     `;
 
     lucide.createIcons();
-    _renderGraficosIaf(d);
 
   } catch (err) {
+    console.error("[IAF] Erro ao carregar:", err);
     page.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`;
     lucide.createIcons();
+    return;
+  }
+
+  try {
+    _renderGraficosIaf(d);
+  } catch (err) {
+    console.error("[IAF] Erro ao renderizar gráficos:", err);
   }
 }
 

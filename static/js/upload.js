@@ -179,10 +179,6 @@ function _mostrarPreview(data) {
     </table>
   `;
   lucide.createIcons();
-
-  // Rebind buttons (re-rendered)
-  document.getElementById("btn-cancelar")?.addEventListener("click", _cancelar);
-  document.getElementById("btn-processar")?.addEventListener("click", _processar);
 }
 
 function _cancelar() {

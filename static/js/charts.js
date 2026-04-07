@@ -2,10 +2,14 @@
  * charts.js — Configurações globais de Chart.js + helpers
  */
 
-// Defaults globais do Chart.js
-Chart.defaults.color = "#8B8B8E";
-Chart.defaults.font.family = "'SF Mono', 'JetBrains Mono', monospace";
-Chart.defaults.font.size = 11;
+// Defaults globais do Chart.js (condicional para sobreviver a falhas de CDN)
+if (typeof Chart !== "undefined") {
+  Chart.defaults.color = "#8B8B8E";
+  Chart.defaults.font.family = "'SF Mono', 'JetBrains Mono', monospace";
+  Chart.defaults.font.size = 11;
+} else {
+  console.warn("Chart.js não carregou — gráficos desabilitados.");
+}
 
 const CHART_COLORS = {
   blue:   "#6C9EFF",
@@ -151,6 +155,7 @@ function fmtNum(valor) {
 const _chartInstances = {};
 
 function criarOuAtualizar(canvasId, tipo, dados, opcoes) {
+  if (typeof Chart === "undefined") return null;
   const canvas = document.getElementById(canvasId);
   if (!canvas) return null;
 
