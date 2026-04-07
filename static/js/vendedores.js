@@ -64,6 +64,8 @@ function _renderTabelaVendedores(lista) {
     { key: "qtd_pedidos",    label: "Pedidos",        align: "right" },
     { key: "ticket_medio",   label: "Ticket Médio",   align: "right" },
     { key: "quantidade",     label: "Itens",          align: "right" },
+    { key: "qtd_marcas",     label: "Marcas",         align: "right" },
+    { key: "top_marca",      label: "Marca Principal",align: "left" },
     { key: "pct_iaf_cabelos",label: "% Cabelos",      align: "right" },
     { key: "pct_iaf_make",   label: "% Make",         align: "right" },
   ];
@@ -90,6 +92,8 @@ function _renderTabelaVendedores(lista) {
       <td class="mono" style="text-align:right">${fmtNum(v.qtd_pedidos)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(v.ticket_medio)}</td>
       <td class="mono" style="text-align:right">${fmtNum(v.quantidade)}</td>
+      <td class="mono" style="text-align:right">${v.qtd_marcas ?? "—"}</td>
+      <td class="secondary" style="white-space:nowrap">${v.top_marca || "—"}</td>
       <td style="text-align:right">
         <span class="badge badge-cabelos">${v.pct_iaf_cabelos.toFixed(1)}%</span>
       </td>
@@ -158,6 +162,24 @@ async function abrirDrawerVendedor(codigo) {
           </div>
         `).join("")}
       </div>
+
+      <!-- Marcas -->
+      ${d.por_marca?.length ? `
+      <div class="section-title" style="margin-bottom:12px">Marcas Vendidas</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:20px">
+        ${d.por_marca.map(x => {
+          const pct = d.total_faturado ? (x.total / d.total_faturado * 100) : 0;
+          return `
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:100px;font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.marca}</div>
+            <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden">
+              <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px"></div>
+            </div>
+            <div style="font-size:11px;font-family:monospace;color:var(--text-secondary);width:80px;text-align:right">${fmtBRL(x.total)}</div>
+            <div style="font-size:10px;color:var(--text-tertiary);width:34px;text-align:right">${pct.toFixed(0)}%</div>
+          </div>`;
+        }).join("")}
+      </div>` : ""}
 
       <!-- Ciclo chart -->
       <div class="section-title" style="margin-bottom:12px">Por Ciclo</div>

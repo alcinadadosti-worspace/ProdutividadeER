@@ -321,6 +321,7 @@ def vendedores():
         "nome": "", "codigo": "",
         "total": 0.0, "pedidos": set(), "quantidade": 0,
         "iaf_cabelos": 0.0, "iaf_make": 0.0, "geral": 0.0,
+        "marcas": defaultdict(float),
     })
 
     for v in vendas:
@@ -340,11 +341,15 @@ def vendedores():
             m["iaf_make"] += total
         else:
             m["geral"] += total
+        marca = v.get("marca") or ""
+        if marca:
+            m["marcas"][marca] += total
 
     resultado = []
     for cod, m in metricas.items():
         total = m["total"]
         pedidos = len(m["pedidos"])
+        marcas_ord = sorted(m["marcas"].items(), key=lambda x: x[1], reverse=True)
         resultado.append({
             "codigo": cod,
             "nome": m["nome"],
@@ -355,6 +360,8 @@ def vendedores():
             "pct_iaf_cabelos": (m["iaf_cabelos"] / total * 100) if total else 0,
             "pct_iaf_make": (m["iaf_make"] / total * 100) if total else 0,
             "pct_geral": (m["geral"] / total * 100) if total else 0,
+            "qtd_marcas": len(marcas_ord),
+            "top_marca": marcas_ord[0][0] if marcas_ord else "—",
         })
 
     resultado.sort(key=lambda x: x["total_faturado"], reverse=True)
@@ -394,6 +401,13 @@ def vendedor_detalhe(codigo):
     for v in vendas_vendedor:
         por_ciclo[v.get("Ciclo") or "Sem Ciclo"] += _safe_float(v["TotalPraticado"])
 
+    # Por marca
+    por_marca = defaultdict(float)
+    for v in vendas_vendedor:
+        marca = v.get("marca") or ""
+        if marca:
+            por_marca[marca] += _safe_float(v["TotalPraticado"])
+
     total = sum(_safe_float(v["TotalPraticado"]) for v in vendas_vendedor)
 
     return jsonify({
@@ -404,6 +418,7 @@ def vendedor_detalhe(codigo):
         "pedidos": lista_pedidos[:50],
         "por_iaf": [{"classificacao": k, "total": v} for k, v in por_iaf.items()],
         "por_ciclo": [{"ciclo": k, "total": v} for k, v in sorted(por_ciclo.items())],
+        "por_marca": [{"marca": k, "total": v} for k, v in sorted(por_marca.items(), key=lambda x: x[1], reverse=True)],
     })
 
 
