@@ -110,10 +110,35 @@
       <div id="drawer-content" class="drawer-content"></div>
     </aside>
 
+  <!-- ── Modal: Produtos sem Marca ────────────────────────────────────── -->
+  <div id="modal-sem-marca" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Produtos sem Marca</div>
+          <div class="modal-subtitle" id="modal-sem-marca-sub"></div>
+        </div>
+        <button class="btn-icon" id="modal-sem-marca-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-info">Estes produtos são novos no catálogo. Atribua a marca de cada um para enriquecer o banco de dados. Deixe em branco para pular.</p>
+        <datalist id="marcas-datalist"></datalist>
+        <div class="modal-table-wrap" id="modal-sem-marca-lista"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="modal-sem-marca-pular">Pular tudo</button>
+        <button class="btn-primary" id="modal-sem-marca-salvar">
+          <i data-lucide="save"></i> Salvar marcas
+        </button>
+      </div>
+    </div>
+  </div>
+
   </div>
 
   <!-- Scripts -->
   <script src="/static/js/charts.js"></script>
+  <script src="/static/js/catalogo.js"></script>
   <script src="/static/js/upload.js"></script>
   <script src="/static/js/dashboard.js"></script>
   <script src="/static/js/vendedores.js"></script>

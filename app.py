@@ -7,6 +7,7 @@ import os
 import io
 import csv
 import json
+import sqlite3
 from collections import defaultdict
 from datetime import datetime
 
@@ -534,6 +535,93 @@ def filtros():
         "vendedores": [{"codigo": c, "nome": n} for c, n in vendedores_lista],
         "papeis": papeis,
     })
+
+
+@app.route("/api/produtos/sem-marca")
+def produtos_sem_marca():
+    """Retorna produtos únicos sem marca cadastrada (não encontrados no catálogo)."""
+    _garantir_estado()
+    vistos = {}
+    for v in _estado["vendas"]:
+        if v.get("marca"):
+            continue
+        sku = v.get("CodigoProduto_normalizado") or v.get("CodigoProduto") or "?"
+        if not sku or sku == "?":
+            continue
+        if sku not in vistos:
+            vistos[sku] = {
+                "sku": sku,
+                "sku_original": v.get("CodigoProduto") or sku,
+                "nome": v.get("Produto") or sku,
+                "quantidade": 0,
+                "total": 0.0,
+            }
+        vistos[sku]["quantidade"] += v.get("Quantidade", 0)
+        vistos[sku]["total"] += _safe_float(v["TotalPraticado"])
+
+    resultado = sorted(vistos.values(), key=lambda x: x["total"], reverse=True)
+    return jsonify({"produtos": resultado, "total": len(resultado)})
+
+
+@app.route("/api/marcas")
+def marcas():
+    """Retorna lista de marcas distintas já cadastradas no banco."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT marca FROM produtos WHERE marca != '' ORDER BY marca")
+        lista = [row[0] for row in cur.fetchall()]
+        conn.close()
+    except Exception:
+        lista = []
+    return jsonify({"marcas": lista})
+
+
+@app.route("/api/produtos/cadastrar", methods=["POST"])
+def cadastrar_produtos():
+    """Cadastra novos produtos no banco e re-cruza as vendas em memória."""
+    dados = request.json
+    if not dados or not isinstance(dados, list):
+        return jsonify({"erro": "Envie uma lista de produtos"}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    salvos = 0
+
+    for p in dados:
+        sku_orig = str(p.get("sku_original") or p.get("sku") or "").strip()
+        sku_norm = normalizar_sku(sku_orig)
+        nome = str(p.get("nome") or "").strip()
+        marca = str(p.get("marca") or "").strip()
+        if not sku_norm or not marca:
+            continue
+
+        # Atualizar se existir, inserir se não existir
+        cur.execute("SELECT id FROM produtos WHERE sku_normalizado = ?", (sku_norm,))
+        row = cur.fetchone()
+        if row:
+            cur.execute(
+                "UPDATE produtos SET nome=?, marca=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (nome, marca, row[0])
+            )
+        else:
+            cur.execute(
+                "INSERT INTO produtos (sku, sku_normalizado, nome, marca) VALUES (?, ?, ?, ?)",
+                (sku_orig, sku_norm, nome, marca)
+            )
+        salvos += 1
+
+    conn.commit()
+    conn.close()
+
+    # Re-carregar índices e re-cruzar vendas em memória
+    _estado["indice_produtos"] = None
+    _estado["indice_iaf"] = None
+    indice_produtos, indice_iaf = _carregar_indices()
+    _estado["vendas"] = cruzar_vendas(_estado["vendas"], indice_produtos, indice_iaf)
+    _salvar_estado()
+
+    return jsonify({"ok": True, "salvos": salvos})
 
 
 @app.route("/api/dados")

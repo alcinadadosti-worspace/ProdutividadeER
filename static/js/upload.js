@@ -215,8 +215,17 @@ async function _processar() {
     atualizarStatusBadge(data.total_processado);
     // Atualizar chips de filtro global
     fetch("/api/filtros").then(r => r.json()).then(f => _atualizarFiltrosBar(f)).catch(() => {});
-    // Navegar ao dashboard
-    setTimeout(() => navegarPara("dashboard"), 600);
+    // Verificar produtos sem marca e abrir modal se houver
+    try {
+      const semMarca = await fetch("/api/produtos/sem-marca").then(r => r.json());
+      if (semMarca.total > 0) {
+        setTimeout(() => abrirModalSemMarca(), 700);
+      } else {
+        setTimeout(() => navegarPara("dashboard"), 600);
+      }
+    } catch (_) {
+      setTimeout(() => navegarPara("dashboard"), 600);
+    }
   } catch (err) {
     _esconderProgress();
     btn.disabled = false;
