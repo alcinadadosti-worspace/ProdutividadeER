@@ -150,11 +150,11 @@ async function abrirDrawerVendedor(codigo) {
     content.innerHTML = `
       <!-- IAF breakdown -->
       <div class="section-title" style="margin-bottom:12px">Distribuição IAF</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px">
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
         ${d.por_iaf.map(x => `
-          <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;text-align:center">
-            <div style="font-size:16px;font-weight:600;font-family:monospace;color:${_iafColor(x.classificacao)}">${fmtBRL(x.total)}</div>
-            <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${x.classificacao}</div>
+          <div style="background:var(--bg-tertiary);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;color:var(--text-tertiary)">${x.classificacao}</div>
+            <div style="font-size:13px;font-weight:600;font-family:monospace;color:${_iafColor(x.classificacao)}">${fmtBRL(x.total)}</div>
           </div>
         `).join("")}
       </div>

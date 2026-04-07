@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Grupo Alcina Maria — Análise de Vendas</title>
   <link rel="stylesheet" href="/static/css/style.css" />
-  <!-- Lucide Icons (versão fixada) -->
-  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.1/dist/umd/lucide.min.js"></script>
+  <!-- Lucide Icons com fallback para unpkg se jsdelivr falhar -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"
+          onerror="this.onerror=null;this.src='https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js'"></script>
   <!-- Chart.js (versão fixada, sem adapter de datas) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
