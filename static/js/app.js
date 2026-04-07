@@ -2,6 +2,12 @@
  * app.js — Router SPA + inicialização global
  */
 
+// Garantir que lucide existe mesmo se CDN falhar
+if (typeof lucide === "undefined") {
+  window.lucide = { createIcons: () => {} };
+  console.warn("Lucide CDN não carregou — ícones desabilitados.");
+}
+
 // ─── Estado global de filtros ─────────────────────────────────────────────
 window.APP_FILTROS = {};
 
