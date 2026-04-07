@@ -245,6 +245,34 @@ function _atualizarFiltrosBar(filtros) {
     ).join("");
   }
 
+  // Vendedores (select)
+  const grpVend = document.getElementById("filtros-vendedor");
+  if (grpVend && filtros.vendedores?.length) {
+    const ativo = window.APP_FILTROS?.vendedor || "";
+    const options = filtros.vendedores.map(v =>
+      `<option value="${v.codigo}" ${ativo === v.codigo ? "selected" : ""}>${_abreviarNome(v.nome)}</option>`
+    ).join("");
+    grpVend.innerHTML = `
+      <select id="select-vendedor" class="filtros-select ${ativo ? "active" : ""}">
+        <option value="">Todos os vendedores</option>
+        ${options}
+      </select>`;
+
+    document.getElementById("select-vendedor").addEventListener("change", e => {
+      const valor = e.target.value;
+      if (valor) {
+        window.APP_FILTROS["vendedor"] = valor;
+        e.target.classList.add("active");
+      } else {
+        delete window.APP_FILTROS["vendedor"];
+        e.target.classList.remove("active");
+      }
+      const temFiltros = Object.keys(window.APP_FILTROS).length > 0;
+      document.getElementById("btn-limpar-filtros")?.classList.toggle("hidden", !temFiltros);
+      if (_paginaAtual && PAGINAS[_paginaAtual]) PAGINAS[_paginaAtual].render();
+    });
+  }
+
   // Bind chips
   document.querySelectorAll(".filter-chip").forEach(chip => {
     chip.addEventListener("click", () => {

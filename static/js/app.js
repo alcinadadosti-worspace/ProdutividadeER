@@ -68,6 +68,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-limpar-filtros")?.addEventListener("click", () => {
     window.APP_FILTROS = {};
     document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+    const selVend = document.getElementById("select-vendedor");
+    if (selVend) { selVend.value = ""; selVend.classList.remove("active"); }
     document.getElementById("btn-limpar-filtros").classList.add("hidden");
     if (_paginaAtual) navegarPara(_paginaAtual, true);
   });
