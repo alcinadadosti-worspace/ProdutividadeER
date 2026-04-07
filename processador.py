@@ -3,29 +3,47 @@ processador.py — Leitura e normalização da planilha de vendas
 """
 
 import re
+import unicodedata
 import pandas as pd
 from datetime import datetime
 
 
-# Mapeamento das colunas da planilha para campos internos
+# ─── Normalização de nomes de coluna ──────────────────────────────────────────
+def _norm_col(s):
+    """
+    Normaliza um nome de coluna para comparação:
+    remove acentos, converte para minúsculo, mantém apenas letras/números/espaço.
+    Ex: 'Código Vendedor' → 'codigo vendedor'
+        'C\ufffdigo Vendedor' → 'codigo vendedor'
+    """
+    s = str(s).lower().strip()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^a-z0-9 ]", "", s)
+    return s
+
+
+# Mapeamento: nome normalizado → campo interno
+# Inclui variações reais encontradas nos arquivos
 COLUNAS_MAPEAMENTO = {
-    "Código Vendedor": "CodigoVendedor",
-    "Vendedor": "Vendedor",
-    "Código Produto": "CodigoProduto",
-    "Produto": "Produto",
-    "Qtde": "Quantidade",
-    "Total Praticado": "TotalPraticado",
-    "Código Pedido": "CodigoPedido",
-    "Ciclo faturamento pedido": "Ciclo",
-    "Data faturamento": "DataFaturamento",
-    "Revendedor": "Revendedor",
-    "Papel": "Papel",
-    "Plano de pagamento": "PlanoPagamento",
-    "Código usuário criação": "CodigoUsuarioCriacao",
-    "Usuário criação": "UsuarioCriacao",
-    "Código usuário finalização": "CodigoUsuarioFinalizacao",
-    "Usuário finalização": "UsuarioFinalizacao",
-    "Canal de distribuição": "CanalDistribuicao",
+    "codigo vendedor":              "CodigoVendedor",
+    "vendedor":                     "Vendedor",
+    "codigo produto":               "CodigoProduto",
+    "produto":                      "Produto",
+    "qtde":                         "Quantidade",
+    "total praticado":              "TotalPraticado",
+    "codigo pedido":                "CodigoPedido",
+    "ciclo faturamento pedido":     "Ciclo",   # nome original do prompt
+    "ciclo faturamento":            "Ciclo",   # nome real nos arquivos
+    "data faturamento":             "DataFaturamento",
+    "revendedor":                   "Revendedor",
+    "papel":                        "Papel",
+    "plano de pagamento":           "PlanoPagamento",
+    "codigo usuario criacao":       "CodigoUsuarioCriacao",
+    "usuario criacao":              "UsuarioCriacao",
+    "codigo usuario finalizacao":   "CodigoUsuarioFinalizacao",
+    "usuario finalizacao":          "UsuarioFinalizacao",
+    "canal de distribuicao":        "CanalDistribuicao",
 }
 
 
@@ -36,20 +54,14 @@ def normalizar_sku(valor):
     """
     if valor is None:
         return ""
-    # Converter para string primeiro
     s = str(valor).strip()
-    # Tratar float do Excel: "1234.0" → "1234"
     if re.match(r"^\d+\.0$", s):
         s = s[:-2]
-    # Remover tudo que não é dígito
     s = re.sub(r"[^\d]", "", s)
     return s
 
 
 def _identificar_unidade(canal):
-    """
-    Identifica a unidade a partir do Canal de Distribuição.
-    """
     if not canal:
         return "Desconhecido"
     canal_str = str(canal).strip()
@@ -61,9 +73,6 @@ def _identificar_unidade(canal):
 
 
 def _parse_data(valor):
-    """
-    Tenta converter um valor de data para string ISO (YYYY-MM-DD).
-    """
     if valor is None or (isinstance(valor, float) and pd.isna(valor)):
         return None
     if isinstance(valor, datetime):
@@ -71,8 +80,9 @@ def _parse_data(valor):
     if hasattr(valor, "strftime"):
         return valor.strftime("%Y-%m-%d")
     s = str(valor).strip()
-    formatos = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"]
-    for fmt in formatos:
+    # Tratar datetime completo: "01/04/2026 10:48:04"
+    for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"]:
         try:
             return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
         except ValueError:
@@ -80,56 +90,108 @@ def _parse_data(valor):
     return s
 
 
-def _ler_todas_abas(caminho_arquivo):
+def _parse_valor(valor):
     """
-    Lê todas as abas do arquivo .xlsx e retorna um único DataFrame concatenado.
+    Converte valor monetário para float.
+    Suporta: 'R$ 147,60', '1.234,56', '1234.56', '147,60'
     """
-    abas = pd.read_excel(caminho_arquivo, sheet_name=None, dtype=str, engine="openpyxl")
+    if valor is None:
+        return 0.0
+    s = str(valor).strip()
+    if s in ("", "nan"):
+        return 0.0
+    # Remover símbolo monetário e espaços
+    s = re.sub(r"[R$\s]", "", s)
+    # Formato BR: 1.234,56 → remover ponto de milhar, vírgula → ponto decimal
+    if "," in s and "." in s:
+        # Assume ponto como separador de milhar e vírgula como decimal
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
 
+
+def _ler_todas_abas(caminho_arquivo):
+    """Lê todas as abas do arquivo e retorna DataFrame concatenado."""
+    abas = pd.read_excel(caminho_arquivo, sheet_name=None, dtype=str, engine="openpyxl")
     frames = []
-    for nome_aba, df_aba in abas.items():
+    for df_aba in abas.values():
         df_aba = df_aba.dropna(how="all")
         if not df_aba.empty:
             frames.append(df_aba)
-
     if not frames:
         return pd.DataFrame()
-
-    # Concatenar todas as abas — alinha pelas colunas em comum
     return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _mapear_colunas(df):
+    """
+    Mapeia colunas do DataFrame para campos internos usando comparação normalizada.
+    Retorna dicionário: { nome_real_no_df: campo_interno }
+    """
+    # Construir índice: norm → nome_real
+    norm_para_real = {_norm_col(c): c for c in df.columns}
+
+    mapeamento = {}
+    campos_ja_mapeados = set()
+
+    for nome_norm, campo_interno in COLUNAS_MAPEAMENTO.items():
+        if campo_interno in campos_ja_mapeados:
+            continue  # já mapeado por outro alias
+        if nome_norm in norm_para_real:
+            col_real = norm_para_real[nome_norm]
+            mapeamento[col_real] = campo_interno
+            campos_ja_mapeados.add(campo_interno)
+
+    return mapeamento
 
 
 def ler_planilha(caminho_arquivo):
     """
-    Lê todas as abas da planilha .xlsx e retorna lista de dicionários normalizados.
+    Lê todas as abas da planilha e retorna lista de dicionários normalizados.
     Retorna: (lista_de_vendas, lista_colunas_encontradas, total_linhas)
     """
     df = _ler_todas_abas(caminho_arquivo)
-
     if df.empty:
         return [], [], 0
 
-    # Mapear apenas as colunas que existem na planilha
-    colunas_presentes = {}
-    for col_planilha, col_interna in COLUNAS_MAPEAMENTO.items():
-        # Busca exata e depois busca case-insensitive
-        if col_planilha in df.columns:
-            colunas_presentes[col_planilha] = col_interna
-        else:
-            for col_real in df.columns:
-                if str(col_real).strip().lower() == col_planilha.lower():
-                    colunas_presentes[col_real] = col_interna
-                    break
+    mapeamento = _mapear_colunas(df)
 
-    # Selecionar apenas colunas mapeadas
-    colunas_select = list(colunas_presentes.keys())
-    df_filtrado = df[colunas_select].copy()
-    df_filtrado.rename(columns=colunas_presentes, inplace=True)
+    # Renomear colunas mapeadas e descartar o resto
+    df_filtrado = df[list(mapeamento.keys())].copy()
+    df_filtrado.rename(columns=mapeamento, inplace=True)
+
+    # Preencher campos que aparecem só na 1ª linha de cada grupo de pedido
+    for campo in ["CodigoVendedor", "Vendedor", "CodigoPedido", "Ciclo",
+                  "CanalDistribuicao", "Revendedor", "Papel", "PlanoPagamento",
+                  "CodigoUsuarioCriacao", "UsuarioCriacao",
+                  "CodigoUsuarioFinalizacao", "UsuarioFinalizacao"]:
+        if campo in df_filtrado.columns:
+            df_filtrado[campo] = df_filtrado[campo].replace("nan", pd.NA).ffill()
+
+    # Fallback: se CodigoVendedor ainda vazio, usar UsuarioCriacao (é quem criou o pedido = vendedor)
+    if "CodigoVendedor" in df_filtrado.columns and "CodigoUsuarioCriacao" in df_filtrado.columns:
+        mask_vazio = df_filtrado["CodigoVendedor"].isna() | (df_filtrado["CodigoVendedor"] == "")
+        df_filtrado.loc[mask_vazio, "CodigoVendedor"] = df_filtrado.loc[mask_vazio, "CodigoUsuarioCriacao"]
+    if "Vendedor" in df_filtrado.columns and "UsuarioCriacao" in df_filtrado.columns:
+        mask_vazio = df_filtrado["Vendedor"].isna() | (df_filtrado["Vendedor"] == "")
+        df_filtrado.loc[mask_vazio, "Vendedor"] = df_filtrado.loc[mask_vazio, "UsuarioCriacao"]
 
     total_linhas = len(df_filtrado)
     vendas = []
 
     for _, row in df_filtrado.iterrows():
+
+        def sv(campo):
+            val = row.get(campo)
+            if val is None:
+                return ""
+            s = str(val).strip()
+            return "" if s in ("nan", "None", "<NA>") else s
+
         venda = {}
 
         # Strings simples
@@ -139,47 +201,35 @@ def ler_planilha(caminho_arquivo):
             "CodigoUsuarioCriacao", "UsuarioCriacao",
             "CodigoUsuarioFinalizacao", "UsuarioFinalizacao", "CanalDistribuicao",
         ]:
-            val = row.get(campo)
-            venda[campo] = str(val).strip() if val and str(val) != "nan" else ""
+            venda[campo] = sv(campo)
 
-        # SKU — preservar original e normalizado
-        sku_raw = row.get("CodigoProduto", "")
-        if str(sku_raw) == "nan":
-            sku_raw = ""
-        venda["CodigoProduto"] = str(sku_raw).strip()
+        # SKU
+        sku_raw = sv("CodigoProduto")
+        venda["CodigoProduto"] = sku_raw
         venda["CodigoProduto_normalizado"] = normalizar_sku(sku_raw)
 
         # Quantidade
         try:
-            qtd_val = row.get("Quantidade", "0")
-            venda["Quantidade"] = int(float(str(qtd_val))) if str(qtd_val) != "nan" else 0
+            qtd = sv("Quantidade")
+            venda["Quantidade"] = int(float(qtd)) if qtd else 0
         except (ValueError, TypeError):
             venda["Quantidade"] = 0
 
         # Total Praticado
-        try:
-            total_val = row.get("TotalPraticado", "0")
-            # Tratar formato BR: "1.234,56" → 1234.56
-            total_str = str(total_val).strip().replace(".", "").replace(",", ".")
-            venda["TotalPraticado"] = float(total_str) if total_str and total_str != "nan" else 0.0
-        except (ValueError, TypeError):
-            venda["TotalPraticado"] = 0.0
+        venda["TotalPraticado"] = _parse_valor(sv("TotalPraticado"))
 
         # Data
-        venda["DataFaturamento"] = _parse_data(row.get("DataFaturamento"))
+        venda["DataFaturamento"] = _parse_data(sv("DataFaturamento"))
 
-        # Unidade derivada do canal
-        venda["Unidade"] = _identificar_unidade(venda.get("CanalDistribuicao", ""))
+        # Unidade
+        venda["Unidade"] = _identificar_unidade(venda["CanalDistribuicao"])
 
         vendas.append(venda)
 
-    colunas_encontradas = list(colunas_presentes.values())
+    colunas_encontradas = list(mapeamento.values())
     return vendas, colunas_encontradas, total_linhas
 
 
 def preview_planilha(caminho_arquivo, n=10):
-    """
-    Retorna as primeiras n linhas da planilha já mapeadas (para preview).
-    """
     vendas, colunas, total = ler_planilha(caminho_arquivo)
     return vendas[:n], colunas, total
