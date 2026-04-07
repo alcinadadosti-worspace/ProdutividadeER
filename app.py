@@ -13,7 +13,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_file, render_template
 
 from processador import ler_planilha, preview_planilha, normalizar_sku
-from cruzamento import criar_indice_iaf, cruzar_vendas_com_iaf
+from cruzamento import criar_indices, cruzar_vendas
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -25,14 +25,15 @@ _estado = {
     "vendas": [],           # Lista de dicts com todos os dados processados
     "arquivo_nome": None,
     "processado_em": None,
-    "indice_iaf": None,     # Carregado uma vez ao iniciar
+    "indice_produtos": None,
+    "indice_iaf": None,
 }
 
 
-def _carregar_indice():
-    if _estado["indice_iaf"] is None:
-        _estado["indice_iaf"] = criar_indice_iaf(DB_PATH)
-    return _estado["indice_iaf"]
+def _carregar_indices():
+    if _estado["indice_produtos"] is None or _estado["indice_iaf"] is None:
+        _estado["indice_produtos"], _estado["indice_iaf"] = criar_indices(DB_PATH)
+    return _estado["indice_produtos"], _estado["indice_iaf"]
 
 
 # ─── Helpers de filtro ────────────────────────────────────────────────────────
@@ -112,8 +113,8 @@ def processar():
 
     try:
         vendas, _, total = ler_planilha(tmp_path)
-        indice = _carregar_indice()
-        vendas = cruzar_vendas_com_iaf(vendas, indice)
+        indice_produtos, indice_iaf = _carregar_indices()
+        vendas = cruzar_vendas(vendas, indice_produtos, indice_iaf)
 
         _estado["vendas"] = vendas
         _estado["arquivo_nome"] = nome_arquivo
@@ -341,7 +342,8 @@ def produtos():
     vendas = _aplicar_filtros(_estado["vendas"], request.args)
 
     metricas = defaultdict(lambda: {
-        "sku": "", "nome": "", "quantidade": 0, "total": 0.0,
+        "sku": "", "nome": "", "marca": "", "em_catalogo": False,
+        "quantidade": 0, "total": 0.0,
         "classificacao": "Geral", "metodo_match": "nenhum",
     })
 
@@ -350,6 +352,8 @@ def produtos():
         m = metricas[sku]
         m["sku"] = sku
         m["nome"] = v.get("Produto") or sku
+        m["marca"] = v.get("marca") or m["marca"]
+        m["em_catalogo"] = v.get("em_catalogo", False) or m["em_catalogo"]
         m["quantidade"] += v.get("Quantidade", 0)
         m["total"] += _safe_float(v["TotalPraticado"])
         m["classificacao"] = v.get("classificacao_iaf", "Geral")
@@ -446,6 +450,7 @@ def dados():
     # Campos a retornar (excluir campos internos pesados)
     campos = [
         "CodigoVendedor", "Vendedor", "CodigoProduto", "Produto",
+        "marca", "em_catalogo",
         "Quantidade", "TotalPraticado", "CodigoPedido", "Ciclo",
         "DataFaturamento", "Revendedor", "Papel", "PlanoPagamento",
         "Unidade", "classificacao_iaf", "metodo_match",
@@ -469,6 +474,7 @@ def export_csv():
 
     campos = [
         "CodigoVendedor", "Vendedor", "CodigoProduto", "Produto",
+        "marca", "em_catalogo",
         "Quantidade", "TotalPraticado", "CodigoPedido", "Ciclo",
         "DataFaturamento", "Revendedor", "Papel", "PlanoPagamento",
         "Unidade", "CanalDistribuicao", "classificacao_iaf", "metodo_match",
