@@ -354,9 +354,10 @@ def vendedores():
     return jsonify({"vendedores": resultado, "total": len(resultado)})
 
 
-@app.route("/api/vendedor/<codigo>")
+@app.route("/api/vendedor/<path:codigo>")
 def vendedor_detalhe(codigo):
     """Detalhes de um vendedor específico."""
+    _garantir_estado()
     vendas_vendedor = [v for v in _estado["vendas"] if v.get("CodigoVendedor") == codigo]
     if not vendas_vendedor:
         return jsonify({"erro": "Vendedor não encontrado"}), 404
