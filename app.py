@@ -31,17 +31,19 @@ _estado = {
     "processado_em": None,
     "indice_produtos": None,
     "indice_iaf": None,
+    "marcas_usuario": {},   # {sku_norm: {"nome": str, "marca": str}} — persiste entre importações
 }
 
 
 def _salvar_estado():
-    """Persiste vendas e metadados em disco para sobreviver reinicializações."""
+    """Persiste vendas, metadados e marcas do usuário em disco."""
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({
                 "vendas": _estado["vendas"],
                 "arquivo_nome": _estado["arquivo_nome"],
                 "processado_em": _estado["processado_em"],
+                "marcas_usuario": _estado["marcas_usuario"],
             }, f, ensure_ascii=False)
     except Exception as e:
         app.logger.warning(f"Não foi possível salvar estado: {e}")
@@ -54,11 +56,12 @@ def _carregar_estado_disco():
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        _estado["vendas"]        = data.get("vendas", [])
-        _estado["arquivo_nome"]  = data.get("arquivo_nome")
-        _estado["processado_em"] = data.get("processado_em")
+        _estado["vendas"]         = data.get("vendas", [])
+        _estado["arquivo_nome"]   = data.get("arquivo_nome")
+        _estado["processado_em"]  = data.get("processado_em")
+        _estado["marcas_usuario"] = data.get("marcas_usuario", {})
         if _estado["vendas"]:
-            app.logger.info(f"Estado restaurado: {len(_estado['vendas'])} registros")
+            app.logger.info(f"Estado restaurado: {len(_estado['vendas'])} registros, {len(_estado['marcas_usuario'])} marcas do usuário")
     except Exception as e:
         app.logger.warning(f"Não foi possível carregar estado do disco: {e}")
 
@@ -67,6 +70,19 @@ def _carregar_indices():
     if _estado["indice_produtos"] is None or _estado["indice_iaf"] is None:
         _estado["indice_produtos"], _estado["indice_iaf"] = criar_indices(DB_PATH)
     return _estado["indice_produtos"], _estado["indice_iaf"]
+
+
+def _aplicar_marcas_usuario(vendas):
+    """Aplica marcas definidas pelo usuário sobre vendas sem marca (sobrescreve resultado do cruzamento)."""
+    mu = _estado.get("marcas_usuario", {})
+    if not mu:
+        return vendas
+    for v in vendas:
+        sku_norm = v.get("CodigoProduto_normalizado", "")
+        if sku_norm in mu and not v.get("marca"):
+            v["marca"] = mu[sku_norm]["marca"]
+            v["em_catalogo"] = True
+    return vendas
 
 
 def _garantir_estado():
@@ -166,6 +182,7 @@ def processar():
         vendas, _, total = ler_planilha(tmp_path)
         indice_produtos, indice_iaf = _carregar_indices()
         vendas = cruzar_vendas(vendas, indice_produtos, indice_iaf)
+        vendas = _aplicar_marcas_usuario(vendas)   # aplica marcas salvas pelo usuário
 
         _estado["vendas"] = vendas
         _estado["arquivo_nome"] = nome_arquivo
@@ -539,14 +556,17 @@ def filtros():
 
 @app.route("/api/produtos/sem-marca")
 def produtos_sem_marca():
-    """Retorna produtos únicos sem marca cadastrada (não encontrados no catálogo)."""
+    """Retorna produtos únicos sem marca (nem no DB nem nas marcas do usuário)."""
     _garantir_estado()
+    mu = _estado.get("marcas_usuario", {})
     vistos = {}
     for v in _estado["vendas"]:
         if v.get("marca"):
             continue
         sku = v.get("CodigoProduto_normalizado") or v.get("CodigoProduto") or "?"
         if not sku or sku == "?":
+            continue
+        if sku in mu:   # já foi atribuído pelo usuário antes
             continue
         if sku not in vistos:
             vistos[sku] = {
@@ -579,15 +599,12 @@ def marcas():
 
 @app.route("/api/produtos/cadastrar", methods=["POST"])
 def cadastrar_produtos():
-    """Cadastra novos produtos no banco e re-cruza as vendas em memória."""
+    """Salva marcas atribuídas pelo usuário em memória, no state.json e tenta gravar no DB."""
     dados = request.json
     if not dados or not isinstance(dados, list):
         return jsonify({"erro": "Envie uma lista de produtos"}), 400
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
     salvos = 0
-
     for p in dados:
         sku_orig = str(p.get("sku_original") or p.get("sku") or "").strip()
         sku_norm = normalizar_sku(sku_orig)
@@ -596,29 +613,33 @@ def cadastrar_produtos():
         if not sku_norm or not marca:
             continue
 
-        # Atualizar se existir, inserir se não existir
-        cur.execute("SELECT id FROM produtos WHERE sku_normalizado = ?", (sku_norm,))
-        row = cur.fetchone()
-        if row:
-            cur.execute(
-                "UPDATE produtos SET nome=?, marca=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (nome, marca, row[0])
-            )
-        else:
-            cur.execute(
-                "INSERT INTO produtos (sku, sku_normalizado, nome, marca) VALUES (?, ?, ?, ?)",
-                (sku_orig, sku_norm, nome, marca)
-            )
+        # 1. Guardar nas marcas do usuário (persiste no state.json — fonte da verdade)
+        _estado["marcas_usuario"][sku_norm] = {"nome": nome, "marca": marca}
         salvos += 1
 
-    conn.commit()
-    conn.close()
+        # 2. Tentar gravar no DB (best-effort; no Render é efêmero mas funciona na sessão)
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM produtos WHERE sku_normalizado = ?", (sku_norm,))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "UPDATE produtos SET nome=?, marca=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (nome, marca, row[0])
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO produtos (sku, sku_normalizado, nome, marca) VALUES (?, ?, ?, ?)",
+                    (sku_orig, sku_norm, nome, marca)
+                )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            app.logger.warning(f"Não foi possível gravar no DB: {e}")
 
-    # Re-carregar índices e re-cruzar vendas em memória
-    _estado["indice_produtos"] = None
-    _estado["indice_iaf"] = None
-    indice_produtos, indice_iaf = _carregar_indices()
-    _estado["vendas"] = cruzar_vendas(_estado["vendas"], indice_produtos, indice_iaf)
+    # Aplicar marcas do usuário diretamente nas vendas em memória
+    _aplicar_marcas_usuario(_estado["vendas"])
     _salvar_estado()
 
     return jsonify({"ok": True, "salvos": salvos})
