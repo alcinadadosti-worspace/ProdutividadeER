@@ -80,7 +80,9 @@ function _aplicarFiltroProd(busca = null) {
   if (q.trim()) {
     const ql = q.toLowerCase();
     lista = lista.filter(p =>
-      p.nome.toLowerCase().includes(ql) || p.sku.toLowerCase().includes(ql)
+      p.nome.toLowerCase().includes(ql) ||
+      p.sku.toLowerCase().includes(ql) ||
+      (p.marca || "").toLowerCase().includes(ql)
     );
   }
 
@@ -99,6 +101,7 @@ function _renderTabelaProdutos(lista) {
   const cols = [
     { key: "sku",           label: "SKU",            align: "left" },
     { key: "nome",          label: "Produto",        align: "left" },
+    { key: "marca",         label: "Marca",          align: "left" },
     { key: "total",         label: "Faturamento",    align: "right" },
     { key: "quantidade",    label: "Qtde",           align: "right" },
     { key: "classificacao", label: "Classificação",  align: "left" },
@@ -122,7 +125,8 @@ function _renderTabelaProdutos(lista) {
   const tbody = sorted.map((p, i) => `
     <tr>
       <td class="mono secondary">${p.sku}</td>
-      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${p.nome}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${p.nome}</td>
+      <td class="secondary" style="white-space:nowrap">${p.marca || "—"}</td>
       <td class="mono" style="text-align:right">${fmtBRL(p.total)}</td>
       <td class="mono" style="text-align:right">${fmtNum(p.quantidade)}</td>
       <td>${_badgeClf(p.classificacao)}</td>
