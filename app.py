@@ -488,6 +488,32 @@ def iaf():
     })
 
 
+@app.route("/api/filtros")
+def filtros():
+    """Retorna as opções de filtro disponíveis (ciclos, unidades, classificações)."""
+    _garantir_estado()
+    vendas = _estado["vendas"]
+    if not vendas:
+        return jsonify({"ciclos": [], "unidades": [], "classificacoes": [], "vendedores": [], "papeis": []})
+
+    ciclos = sorted({v.get("Ciclo") or "" for v in vendas} - {""})
+    unidades = sorted({v.get("Unidade") or "" for v in vendas} - {""})
+    classificacoes = ["IAF Cabelos", "IAF Make", "Geral"]
+    vendedores_lista = sorted(
+        {(v.get("CodigoVendedor") or "", v.get("Vendedor") or "") for v in vendas},
+        key=lambda x: x[1]
+    )
+    papeis = sorted({v.get("Papel") or "" for v in vendas} - {""})
+
+    return jsonify({
+        "ciclos": ciclos,
+        "unidades": unidades,
+        "classificacoes": classificacoes,
+        "vendedores": [{"codigo": c, "nome": n} for c, n in vendedores_lista],
+        "papeis": papeis,
+    })
+
+
 @app.route("/api/dados")
 def dados():
     """Dados brutos paginados."""

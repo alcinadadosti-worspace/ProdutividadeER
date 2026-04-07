@@ -43,7 +43,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const res = await fetch("/api/status");
     const data = await res.json();
     _temDados = data.tem_dados;
-    if (_temDados) atualizarStatusBadge(data.total_registros);
+    if (_temDados) {
+      atualizarStatusBadge(data.total_registros);
+      // Popular filtros globais imediatamente (sem depender do dashboard carregar primeiro)
+      fetch("/api/filtros").then(r => r.json()).then(f => _atualizarFiltrosBar(f)).catch(() => {});
+    }
   } catch (e) {
     _temDados = false;
   }

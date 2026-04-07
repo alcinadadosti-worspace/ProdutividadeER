@@ -212,6 +212,8 @@ async function _processar() {
     _esconderProgress();
     showToast(`${fmtNum(data.total_processado)} registros processados com sucesso!`, "success");
     atualizarStatusBadge(data.total_processado);
+    // Atualizar chips de filtro global
+    fetch("/api/filtros").then(r => r.json()).then(f => _atualizarFiltrosBar(f)).catch(() => {});
     // Navegar ao dashboard
     setTimeout(() => navegarPara("dashboard"), 600);
   } catch (err) {
