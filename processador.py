@@ -189,13 +189,26 @@ def ler_planilha(caminho_arquivo):
     df_filtrado = df[list(mapeamento.keys())].copy()
     df_filtrado.rename(columns=mapeamento, inplace=True)
 
-    # Preencher campos que aparecem só na 1ª linha de cada grupo de pedido
-    for campo in ["CodigoVendedor", "Vendedor", "CodigoPedido", "Ciclo",
-                  "CanalDistribuicao", "CodigoRevendedor", "Revendedor", "Papel", "PlanoPagamento",
-                  "CodigoUsuarioCriacao", "UsuarioCriacao",
-                  "CodigoUsuarioFinalizacao", "UsuarioFinalizacao"]:
-        if campo in df_filtrado.columns:
-            df_filtrado.loc[:, campo] = df_filtrado[campo].replace("nan", pd.NA).ffill()
+    # ── Passo 1: propagar CodigoPedido globalmente (é a chave de agrupamento)
+    if "CodigoPedido" in df_filtrado.columns:
+        df_filtrado["CodigoPedido"] = df_filtrado["CodigoPedido"].replace("nan", pd.NA).ffill()
+
+    # ── Passo 2: preencher campos de cabeçalho DENTRO de cada pedido
+    # Assim dados de um pedido/vendedor não vazam para linhas de outros pedidos
+    CAMPOS_CABECALHO = [
+        "CodigoVendedor", "Vendedor", "Ciclo",
+        "CanalDistribuicao", "CodigoRevendedor", "Revendedor", "Papel", "PlanoPagamento",
+        "CodigoUsuarioCriacao", "UsuarioCriacao",
+        "CodigoUsuarioFinalizacao", "UsuarioFinalizacao",
+    ]
+    for campo in CAMPOS_CABECALHO:
+        if campo not in df_filtrado.columns:
+            continue
+        df_filtrado[campo] = df_filtrado[campo].replace("nan", pd.NA)
+        if "CodigoPedido" in df_filtrado.columns:
+            df_filtrado[campo] = df_filtrado.groupby("CodigoPedido", sort=False)[campo].transform("ffill")
+        else:
+            df_filtrado[campo] = df_filtrado[campo].ffill()
 
     # Fallback: se CodigoVendedor ainda vazio, usar UsuarioCriacao (é quem criou o pedido = vendedor)
     if "CodigoVendedor" in df_filtrado.columns and "CodigoUsuarioCriacao" in df_filtrado.columns:
