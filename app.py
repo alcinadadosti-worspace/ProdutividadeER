@@ -72,6 +72,46 @@ def _carregar_indices():
     return _estado["indice_produtos"], _estado["indice_iaf"]
 
 
+def _persistir_produtos_novos(vendas):
+    """Insere no produtos.db os produtos que ainda não estão no catálogo.
+    Salva SKU + nome (marca vazia) para que na próxima importação já sejam
+    reconhecidos e não apareçam no modal de cadastro novamente."""
+    try:
+        # Coletar produtos únicos sem marca (não estão no catálogo)
+        novos = {}
+        for v in vendas:
+            if v.get("em_catalogo"):
+                continue
+            sku_norm = v.get("CodigoProduto_normalizado", "")
+            sku_orig = v.get("CodigoProduto", "")
+            nome     = v.get("Produto", "")
+            if sku_norm and sku_norm not in novos:
+                novos[sku_norm] = {"sku_orig": sku_orig, "nome": nome}
+
+        if not novos:
+            return
+
+        conn = sqlite3.connect(DB_PATH)
+        cur  = conn.cursor()
+        inseridos = 0
+        for sku_norm, info in novos.items():
+            cur.execute(
+                "INSERT OR IGNORE INTO produtos (sku, sku_normalizado, nome, marca) VALUES (?, ?, ?, '')",
+                (info["sku_orig"], sku_norm, info["nome"])
+            )
+            inseridos += cur.rowcount
+        conn.commit()
+        conn.close()
+
+        if inseridos:
+            app.logger.info(f"[Catálogo] {inseridos} produtos novos inseridos no DB")
+            # Invalidar cache para que o próximo cruzamento os reconheça
+            _estado["indice_produtos"] = None
+            _estado["indice_iaf"]      = None
+    except Exception as e:
+        app.logger.warning(f"[Catálogo] Erro ao persistir produtos novos: {e}")
+
+
 def _aplicar_marcas_usuario(vendas):
     """Aplica marcas definidas pelo usuário sobre vendas sem marca (sobrescreve resultado do cruzamento)."""
     mu = _estado.get("marcas_usuario", {})
@@ -188,6 +228,11 @@ def processar():
         indice_produtos, indice_iaf = _carregar_indices()
 
         vendas = cruzar_vendas(vendas, indice_produtos, indice_iaf)
+
+        # Persistir produtos novos no DB automaticamente (sem marca ainda)
+        # Assim, na próxima importação já estão no catálogo e não precisam
+        # ser recadastrados — a marca atribuída pelo usuário também fica salva.
+        _persistir_produtos_novos(vendas)
 
         # Recarregar marcas_usuario do disco antes de aplicar (garante consistência
         # mesmo com múltiplos workers ou após restart)
