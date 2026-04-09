@@ -180,9 +180,26 @@ def processar():
 
     try:
         vendas, _, total = ler_planilha(tmp_path)
+
+        # Forçar recarregamento dos índices do DB para pegar produtos cadastrados
+        # manualmente em sessões anteriores (invalida cache)
+        _estado["indice_produtos"] = None
+        _estado["indice_iaf"] = None
         indice_produtos, indice_iaf = _carregar_indices()
+
         vendas = cruzar_vendas(vendas, indice_produtos, indice_iaf)
-        vendas = _aplicar_marcas_usuario(vendas)   # aplica marcas salvas pelo usuário
+
+        # Recarregar marcas_usuario do disco antes de aplicar (garante consistência
+        # mesmo com múltiplos workers ou após restart)
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    _disk = json.load(f)
+                _estado["marcas_usuario"] = _disk.get("marcas_usuario", _estado.get("marcas_usuario", {}))
+            except Exception:
+                pass
+
+        vendas = _aplicar_marcas_usuario(vendas)
 
         _estado["vendas"] = vendas
         _estado["arquivo_nome"] = nome_arquivo
@@ -671,6 +688,11 @@ def cadastrar_produtos():
             conn.close()
         except Exception as e:
             app.logger.warning(f"Não foi possível gravar no DB: {e}")
+
+    # Invalidar cache dos índices para que a próxima importação recarregue do DB
+    # (que agora inclui os produtos recém-cadastrados)
+    _estado["indice_produtos"] = None
+    _estado["indice_iaf"] = None
 
     # Aplicar marcas do usuário diretamente nas vendas em memória
     _aplicar_marcas_usuario(_estado["vendas"])
