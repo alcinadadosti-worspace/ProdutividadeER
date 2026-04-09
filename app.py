@@ -74,33 +74,37 @@ def _gh_ler_marcas():
 
 
 def _gh_salvar_marcas(marcas_dict):
-    """Salva marcas_catalog.json no GitHub em background (não bloqueia a resposta)."""
-    if not _gh_ok() or not marcas_dict:
-        return
+    """Salva marcas_catalog.json no GitHub. Retorna (ok, erro)."""
+    if not _gh_ok():
+        return False, "GITHUB_TOKEN não configurado"
+    if not marcas_dict:
+        return False, "marcas_dict vazio"
+    try:
+        conteudo = json.dumps(marcas_dict, ensure_ascii=False, indent=2)
+        encoded  = base64.b64encode(conteudo.encode("utf-8")).decode()
 
-    def _commit():
-        try:
-            conteudo = json.dumps(marcas_dict, ensure_ascii=False, indent=2)
-            encoded  = base64.b64encode(conteudo.encode("utf-8")).decode()
+        atual = _gh_request("GET", _GH_FILE)
+        sha   = atual["sha"] if atual else None
 
-            # Buscar SHA atual do arquivo (necessário para atualizar)
-            atual = _gh_request("GET", _GH_FILE)
-            sha   = atual["sha"] if atual else None
+        body = {
+            "message": "chore: atualizar marcas do catálogo [auto]",
+            "content": encoded,
+            "branch":  _GH_BRANCH,
+        }
+        if sha:
+            body["sha"] = sha
 
-            body = {
-                "message": "chore: atualizar marcas do catálogo [auto]",
-                "content": encoded,
-                "branch":  _GH_BRANCH,
-            }
-            if sha:
-                body["sha"] = sha
-
-            _gh_request("PUT", _GH_FILE, body)
-            app.logger.info(f"[GitHub] marcas_catalog.json atualizado ({len(marcas_dict)} entradas)")
-        except Exception as e:
-            app.logger.warning(f"[GitHub] Erro ao salvar marcas: {e}")
-
-    threading.Thread(target=_commit, daemon=True).start()
+        _gh_request("PUT", _GH_FILE, body)
+        app.logger.info(f"[GitHub] marcas_catalog.json atualizado ({len(marcas_dict)} entradas)")
+        return True, None
+    except urllib.error.HTTPError as e:
+        corpo = e.read().decode("utf-8", errors="replace")
+        msg = f"HTTP {e.code}: {corpo}"
+        app.logger.warning(f"[GitHub] Erro ao salvar: {msg}")
+        return False, msg
+    except Exception as e:
+        app.logger.warning(f"[GitHub] Erro ao salvar: {e}")
+        return False, str(e)
 
 
 # ─── Estado em memória ────────────────────────────────────────────────────────
@@ -853,14 +857,14 @@ def cadastrar_produtos():
     _estado["indice_produtos"] = None
     _estado["indice_iaf"] = None
 
-    # Salvar no GitHub em background (persistência permanente entre deploys)
-    _gh_salvar_marcas(_estado["marcas_usuario"])
+    # Salvar no GitHub (persistência permanente entre deploys)
+    gh_ok, gh_erro = _gh_salvar_marcas(_estado["marcas_usuario"])
 
     # Aplicar marcas do usuário diretamente nas vendas em memória
     _aplicar_marcas_usuario(_estado["vendas"])
     _salvar_estado()
 
-    return jsonify({"ok": True, "salvos": salvos})
+    return jsonify({"ok": True, "salvos": salvos, "github": {"ok": gh_ok, "erro": gh_erro}})
 
 
 @app.route("/api/dados")
