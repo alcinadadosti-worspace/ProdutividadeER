@@ -250,6 +250,25 @@ def ler_planilha(caminho_arquivo):
 
         vendas.append(venda)
 
+    # Normalização: cada vendedor é fixado na sua unidade dominante (maioria dos registros).
+    # Evita que poucos pedidos com canal errado na origem façam o vendedor aparecer em outra unidade.
+    contagem_unidade = {}
+    for v in vendas:
+        cod = v.get("CodigoVendedor") or "?"
+        unidade = v.get("Unidade", "Desconhecido")
+        if cod not in contagem_unidade:
+            contagem_unidade[cod] = {}
+        contagem_unidade[cod][unidade] = contagem_unidade[cod].get(unidade, 0) + 1
+
+    unidade_dominante = {
+        cod: max(unidades, key=unidades.get)
+        for cod, unidades in contagem_unidade.items()
+    }
+
+    for v in vendas:
+        cod = v.get("CodigoVendedor") or "?"
+        v["Unidade"] = unidade_dominante.get(cod, v["Unidade"])
+
     colunas_encontradas = list(mapeamento.values())
     return vendas, colunas_encontradas, total_linhas
 
