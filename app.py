@@ -281,6 +281,21 @@ def dashboard():
         por_dia[dia] += _safe_float(v["TotalPraticado"])
     evolucao_diaria = [{"data": k, "total": v} for k, v in sorted(por_dia.items())]
 
+    # Evolução diária por vendedor (top 10 por faturamento)
+    por_dia_vend = defaultdict(lambda: defaultdict(float))
+    fat_vend_total = defaultdict(float)
+    for v in vendas:
+        dia = v.get("DataFaturamento") or "Sem data"
+        nome = v.get("Vendedor") or v.get("CodigoVendedor") or "?"
+        total_v = _safe_float(v["TotalPraticado"])
+        por_dia_vend[nome][dia] += total_v
+        fat_vend_total[nome] += total_v
+    top_nomes_vend = [n for n, _ in sorted(fat_vend_total.items(), key=lambda x: x[1], reverse=True)[:10]]
+    evolucao_por_vendedor = [
+        {"nome": nome, "serie": [{"data": d, "total": t} for d, t in sorted(por_dia_vend[nome].items())]}
+        for nome in top_nomes_vend
+    ]
+
     # Filtros disponíveis
     ciclos = sorted({v.get("Ciclo") or "" for v in _estado["vendas"]} - {""})
     unidades = sorted({v.get("Unidade") or "" for v in _estado["vendas"]} - {""})
@@ -307,6 +322,7 @@ def dashboard():
         "por_pagamento": [{"pagamento": k, "total": v} for k, v in sorted(por_pagamento.items(), key=lambda x: x[1], reverse=True)],
         "top_vendedores": [{"codigo": k, "nome": v["nome"], "total": v["total"]} for k, v in top_vendedores],
         "evolucao_diaria": evolucao_diaria,
+        "evolucao_por_vendedor": evolucao_por_vendedor,
         "filtros": {
             "ciclos": ciclos,
             "unidades": unidades,
@@ -324,7 +340,7 @@ def _dashboard_vazio():
         "arquivo_nome": None,
         "total_registros": 0,
         "por_ciclo": [], "por_unidade": [], "por_iaf": [],
-        "por_pagamento": [], "top_vendedores": [], "evolucao_diaria": [],
+        "por_pagamento": [], "top_vendedores": [], "evolucao_diaria": [], "evolucao_por_vendedor": [],
         "filtros": {"ciclos": [], "unidades": [], "classificacoes": [], "vendedores": [], "papeis": []},
     }
 

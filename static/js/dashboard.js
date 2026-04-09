@@ -108,6 +108,14 @@ function _templateDashboard(d) {
       </div>
     </div>
 
+    <!-- Charts row 2b -->
+    <div class="charts-grid mb-12">
+      <div class="chart-card full-width">
+        <div class="chart-title">Evolução Diária de Faturamento por Vendedor</div>
+        <div class="chart-container tall"><canvas id="chart-diario-vendedor"></canvas></div>
+      </div>
+    </div>
+
     <!-- Charts row 3 -->
     <div class="charts-grid triple mb-12">
       <div class="chart-card">
@@ -174,6 +182,51 @@ function _renderGraficos(d) {
         pointHoverRadius: 5,
       }],
     }, lineOptions({ plugins: { tooltip: { ...TOOLTIP_STYLE, callbacks: { label: ctx => " " + fmtBRL(ctx.raw) } } } }));
+  }
+
+  // Evolução diária por vendedor (multi-line)
+  if (d.evolucao_por_vendedor && d.evolucao_por_vendedor.length) {
+    const todasDatas = [...new Set(
+      d.evolucao_por_vendedor.flatMap(v => v.serie.map(s => s.data))
+    )].sort();
+
+    const datasets = d.evolucao_por_vendedor.map((vend, i) => {
+      const cor = PALETTE[i % PALETTE.length];
+      const dataMap = Object.fromEntries(vend.serie.map(s => [s.data, s.total]));
+      return {
+        label: _abreviarNome(vend.nome),
+        data: todasDatas.map(dt => dataMap[dt] || 0),
+        borderColor: cor,
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        fill: false,
+        tension: 0.3,
+        pointRadius: todasDatas.length > 60 ? 0 : 3,
+        pointHoverRadius: 5,
+      };
+    });
+
+    criarOuAtualizar("chart-diario-vendedor", "line", { labels: todasDatas, datasets },
+      lineOptions({
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: {
+              color: "#8B8B8E",
+              font: { size: 10 },
+              padding: 10,
+              boxWidth: 10,
+              usePointStyle: true,
+            },
+          },
+          tooltip: {
+            ...TOOLTIP_STYLE,
+            callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBRL(ctx.raw)}` },
+          },
+        },
+      })
+    );
   }
 
   // Unidade
