@@ -8,6 +8,10 @@ import io
 import csv
 import json
 import sqlite3
+import base64
+import threading
+import urllib.request
+import urllib.error
 from collections import defaultdict
 from datetime import datetime
 
@@ -22,7 +26,82 @@ app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 # ─── Caminhos ─────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(__file__)
 DB_PATH    = os.path.join(BASE_DIR, "produtos.db")
-STATE_FILE = os.path.join(BASE_DIR, "_state.json")   # persistência em disco
+STATE_FILE = os.path.join(BASE_DIR, "_state.json")
+
+# ─── GitHub — persistência permanente de marcas_catalog.json ──────────────────
+_GH_TOKEN  = os.environ.get("GITHUB_TOKEN", "")
+_GH_REPO   = os.environ.get("GITHUB_REPO", "alcinadadosti-worspace/ProdutividadeER")
+_GH_BRANCH = os.environ.get("GITHUB_BRANCH", "master")
+_GH_FILE   = "marcas_catalog.json"
+
+
+def _gh_ok():
+    return bool(_GH_TOKEN and _GH_REPO)
+
+
+def _gh_request(method, path, body=None):
+    url = f"https://api.github.com/repos/{_GH_REPO}/contents/{path}"
+    headers = {
+        "Authorization": f"Bearer {_GH_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+    }
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def _gh_ler_marcas():
+    """Lê marcas_catalog.json do GitHub. Retorna {} se não existir ou sem token."""
+    if not _gh_ok():
+        return {}
+    try:
+        resp = _gh_request("GET", _GH_FILE)
+        if not resp:
+            return {}
+        conteudo = base64.b64decode(resp["content"]).decode("utf-8")
+        return json.loads(conteudo)
+    except Exception as e:
+        app.logger.warning(f"[GitHub] Erro ao ler marcas: {e}")
+        return {}
+
+
+def _gh_salvar_marcas(marcas_dict):
+    """Salva marcas_catalog.json no GitHub em background (não bloqueia a resposta)."""
+    if not _gh_ok() or not marcas_dict:
+        return
+
+    def _commit():
+        try:
+            conteudo = json.dumps(marcas_dict, ensure_ascii=False, indent=2)
+            encoded  = base64.b64encode(conteudo.encode("utf-8")).decode()
+
+            # Buscar SHA atual do arquivo (necessário para atualizar)
+            atual = _gh_request("GET", _GH_FILE)
+            sha   = atual["sha"] if atual else None
+
+            body = {
+                "message": "chore: atualizar marcas do catálogo [auto]",
+                "content": encoded,
+                "branch":  _GH_BRANCH,
+            }
+            if sha:
+                body["sha"] = sha
+
+            _gh_request("PUT", _GH_FILE, body)
+            app.logger.info(f"[GitHub] marcas_catalog.json atualizado ({len(marcas_dict)} entradas)")
+        except Exception as e:
+            app.logger.warning(f"[GitHub] Erro ao salvar marcas: {e}")
+
+    threading.Thread(target=_commit, daemon=True).start()
+
 
 # ─── Estado em memória ────────────────────────────────────────────────────────
 _estado = {
@@ -50,20 +129,26 @@ def _salvar_estado():
 
 
 def _carregar_estado_disco():
-    """Carrega estado salvo em disco ao iniciar (se existir)."""
-    if not os.path.exists(STATE_FILE):
-        return
-    try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        _estado["vendas"]         = data.get("vendas", [])
-        _estado["arquivo_nome"]   = data.get("arquivo_nome")
-        _estado["processado_em"]  = data.get("processado_em")
-        _estado["marcas_usuario"] = data.get("marcas_usuario", {})
-        if _estado["vendas"]:
-            app.logger.info(f"Estado restaurado: {len(_estado['vendas'])} registros, {len(_estado['marcas_usuario'])} marcas do usuário")
-    except Exception as e:
-        app.logger.warning(f"Não foi possível carregar estado do disco: {e}")
+    """Carrega estado salvo em disco ao iniciar (se existir).
+    Marcas do GitHub têm prioridade — são a fonte permanente de verdade."""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            _estado["vendas"]         = data.get("vendas", [])
+            _estado["arquivo_nome"]   = data.get("arquivo_nome")
+            _estado["processado_em"]  = data.get("processado_em")
+            _estado["marcas_usuario"] = data.get("marcas_usuario", {})
+            if _estado["vendas"]:
+                app.logger.info(f"Estado restaurado: {len(_estado['vendas'])} registros")
+        except Exception as e:
+            app.logger.warning(f"Não foi possível carregar estado do disco: {e}")
+
+    # GitHub sobrescreve marcas locais (fonte permanente)
+    marcas_gh = _gh_ler_marcas()
+    if marcas_gh:
+        _estado["marcas_usuario"].update(marcas_gh)
+        app.logger.info(f"[GitHub] {len(marcas_gh)} marcas carregadas do catálogo")
 
 
 def _carregar_indices():
@@ -234,8 +319,7 @@ def processar():
         # ser recadastrados — a marca atribuída pelo usuário também fica salva.
         _persistir_produtos_novos(vendas)
 
-        # Recarregar marcas_usuario do disco antes de aplicar (garante consistência
-        # mesmo com múltiplos workers ou após restart)
+        # Recarregar marcas: disco + GitHub (fonte permanente)
         if os.path.exists(STATE_FILE):
             try:
                 with open(STATE_FILE, "r", encoding="utf-8") as f:
@@ -243,6 +327,9 @@ def processar():
                 _estado["marcas_usuario"] = _disk.get("marcas_usuario", _estado.get("marcas_usuario", {}))
             except Exception:
                 pass
+        marcas_gh = _gh_ler_marcas()
+        if marcas_gh:
+            _estado["marcas_usuario"].update(marcas_gh)
 
         vendas = _aplicar_marcas_usuario(vendas)
 
@@ -735,9 +822,11 @@ def cadastrar_produtos():
             app.logger.warning(f"Não foi possível gravar no DB: {e}")
 
     # Invalidar cache dos índices para que a próxima importação recarregue do DB
-    # (que agora inclui os produtos recém-cadastrados)
     _estado["indice_produtos"] = None
     _estado["indice_iaf"] = None
+
+    # Salvar no GitHub em background (persistência permanente entre deploys)
+    _gh_salvar_marcas(_estado["marcas_usuario"])
 
     # Aplicar marcas do usuário diretamente nas vendas em memória
     _aplicar_marcas_usuario(_estado["vendas"])
