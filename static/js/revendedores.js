@@ -82,13 +82,14 @@ async function renderRevendedores() {
     lucide.createIcons();
 
     // ── Gráfico por papel ────────────────────────────────────────────────────
+    const papelCores = porPapel.map(p => _corPapel(p.papel));
     criarOuAtualizar("rev-papel-chart", "bar", {
       labels: porPapel.map(p => p.papel),
       datasets: [{
         data: porPapel.map(p => p.total_faturado),
-        backgroundColor: PALETTE.map(c => c + "99"),
-        borderColor: PALETTE,
-        borderWidth: 1,
+        backgroundColor: papelCores.map(c => c.bg),
+        borderColor: papelCores.map(c => c.cor),
+        borderWidth: 1.5,
         borderRadius: 4,
       }],
     }, barOptions(false, {
@@ -99,7 +100,12 @@ async function renderRevendedores() {
       },
       scales: {
         x: { ticks: { callback: v => fmtBRL(v) } },
-        y: { ticks: { color: "var(--text-secondary)", font: { size: 11 } } },
+        y: {
+          ticks: {
+            font: { size: 11 },
+            color: ctx => papelCores[ctx.index]?.cor ?? "#94A3B8",
+          },
+        },
       },
     }));
 
@@ -136,9 +142,11 @@ function _renderConcentracao(conc, porPapel) {
   // Ticket médio por papel
   const papelRows = porPapel.map(p => {
     const pct = conc.total_faturado ? (p.total_faturado / conc.total_faturado * 100) : 0;
+    const { cor, bg } = _corPapel(p.papel);
     return `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <div style="width:130px;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.papel}</div>
+        <div style="width:130px;font-size:12px;font-weight:600;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                    background:${bg};border-radius:4px;padding:2px 6px">${p.papel}</div>
         <div style="font-size:12px;font-family:monospace;width:80px;text-align:right;color:var(--text-primary)">${fmtBRL(p.ticket_medio)}</div>
         <div style="font-size:11px;color:var(--text-tertiary);width:28px;text-align:right">${pct.toFixed(0)}%</div>
       </div>`;
@@ -202,7 +210,7 @@ function _renderTabelaRevendedores(lista) {
         <div style="font-size:13px">${r.nome}</div>
         <div class="secondary" style="font-size:11px;font-family:monospace">${r.codigo}</div>
       </td>
-      <td><span class="badge ${_papelBadgeClass(r.papel)}">${r.papel}</span></td>
+      <td>${_papelBadgeInline(r.papel)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(r.total_faturado)}</td>
       <td class="mono" style="text-align:right">${fmtNum(r.qtd_pedidos)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(r.ticket_medio)}</td>
@@ -360,11 +368,28 @@ async function abrirDrawerRevendedor(codigo) {
   }
 }
 
-function _papelBadgeClass(papel) {
-  if (!papel) return "badge-geral";
-  const p = papel.toLowerCase();
-  if (p.includes("diamante")) return "badge-cabelos";
-  if (p.includes("ouro") || p.includes("gold")) return "badge-make";
-  if (p.includes("prata") || p.includes("silver")) return "";
-  return "badge-geral";
+function _papelBadgeInline(papel) {
+  if (!papel) return `<span class="badge badge-geral">—</span>`;
+  const { cor, bg } = _corPapel(papel);
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;
+                        color:${cor};background:${bg};white-space:nowrap">${papel}</span>`;
+}
+
+// Cores por tier de papel
+const _PAPEL_CORES = [
+  { match: /diamante/i,        cor: "#B9F2FF", bg: "rgba(185,242,255,0.18)" }, // azul diamante
+  { match: /esmeralda/i,       cor: "#4ADE80", bg: "rgba(74,222,128,0.18)"  }, // verde esmeralda
+  { match: /rubi/i,            cor: "#F87171", bg: "rgba(248,113,113,0.18)" }, // vermelho rubi
+  { match: /ouro|gold/i,       cor: "#FBBF24", bg: "rgba(251,191,36,0.18)"  }, // dourado
+  { match: /prata|silver/i,    cor: "#CBD5E1", bg: "rgba(203,213,225,0.18)" }, // prateado
+  { match: /bronze/i,          cor: "#CD7C3A", bg: "rgba(205,124,58,0.18)"  }, // bronze
+  { match: /platina|platinum/i,cor: "#E2E8F0", bg: "rgba(226,232,240,0.18)" }, // platina
+];
+
+function _corPapel(papel) {
+  const n = papel || "";
+  for (const { match, cor, bg } of _PAPEL_CORES) {
+    if (match.test(n)) return { cor, bg };
+  }
+  return { cor: "#94A3B8", bg: "rgba(148,163,184,0.15)" }; // cinza padrão
 }
