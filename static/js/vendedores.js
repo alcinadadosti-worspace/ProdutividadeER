@@ -154,11 +154,11 @@ async function abrirDrawerVendedor(codigo) {
     content.innerHTML = `
       <!-- IAF breakdown -->
       <div class="section-title" style="margin-bottom:12px">Distribuição IAF</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
         ${d.por_iaf.map(x => `
-          <div style="background:var(--bg-tertiary);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
-            <div style="font-size:11px;color:var(--text-tertiary)">${x.classificacao}</div>
-            <div style="font-size:13px;font-weight:600;font-family:monospace;color:${_iafColor(x.classificacao)}">${fmtBRL(x.total)}</div>
+          <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:13px;color:var(--text-secondary)">${x.classificacao}</div>
+            <div style="font-size:15px;font-weight:600;font-family:monospace;color:${_iafColor(x.classificacao)}">${fmtBRL(x.total)}</div>
           </div>
         `).join("")}
       </div>
@@ -166,24 +166,39 @@ async function abrirDrawerVendedor(codigo) {
       <!-- Marcas -->
       ${d.por_marca?.length ? `
       <div class="section-title" style="margin-bottom:12px">Marcas Vendidas</div>
-      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:20px">
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:24px">
         ${d.por_marca.map(x => {
           const pct = d.total_faturado ? (x.total / d.total_faturado * 100) : 0;
           return `
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:100px;font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.marca}</div>
-            <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.marca}</div>
+            <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
               <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px"></div>
             </div>
-            <div style="font-size:11px;font-family:monospace;color:var(--text-secondary);width:80px;text-align:right">${fmtBRL(x.total)}</div>
-            <div style="font-size:10px;color:var(--text-tertiary);width:34px;text-align:right">${pct.toFixed(0)}%</div>
+            <div style="font-size:12px;font-family:monospace;color:var(--text-secondary);width:90px;text-align:right">${fmtBRL(x.total)}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);width:36px;text-align:right">${pct.toFixed(0)}%</div>
           </div>`;
         }).join("")}
       </div>` : ""}
 
+      <!-- Marcas mais vendidas juntas -->
+      ${d.marcas_juntas?.length ? `
+      <div class="section-title" style="margin-bottom:12px">Marcas Mais Vendidas Juntas</div>
+      <div style="margin-bottom:24px">
+        ${d.marcas_juntas.map((x, i) => `
+          <div class="marcas-juntas-par">
+            <span style="font-size:11px;color:var(--text-tertiary);width:18px;text-align:right;flex-shrink:0">${i + 1}.</span>
+            <span class="marcas-juntas-badge">${x.marcas[0]}</span>
+            <span class="marcas-juntas-sep">+</span>
+            <span class="marcas-juntas-badge" style="background:rgba(167,139,250,0.15);color:var(--accent-purple)">${x.marcas[1]}</span>
+            <span class="marcas-juntas-count">${x.pedidos} pedido${x.pedidos !== 1 ? "s" : ""}</span>
+          </div>
+        `).join("")}
+      </div>` : ""}
+
       <!-- Ciclo chart -->
       <div class="section-title" style="margin-bottom:12px">Por Ciclo</div>
-      <div style="height:160px;margin-bottom:20px">
+      <div style="height:180px;margin-bottom:24px">
         <canvas id="drawer-ciclo-chart"></canvas>
       </div>
 
@@ -199,11 +214,11 @@ async function abrirDrawerVendedor(codigo) {
           <tbody>
             ${d.pedidos.map(p => `
               <tr>
-                <td class="mono secondary">${p.codigo}</td>
-                <td class="secondary">${p.data || "—"}</td>
-                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${p.revendedor || "—"}</td>
-                <td class="mono" style="text-align:right">${fmtBRL(p.total)}</td>
-                <td class="mono" style="text-align:right">${fmtNum(p.itens)}</td>
+                <td class="mono secondary" style="font-size:12px">${p.codigo}</td>
+                <td class="secondary" style="font-size:12px">${p.data || "—"}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${p.revendedor || "—"}</td>
+                <td class="mono" style="text-align:right;font-size:12px">${fmtBRL(p.total)}</td>
+                <td class="mono" style="text-align:right;font-size:12px">${fmtNum(p.itens)}</td>
               </tr>
             `).join("")}
           </tbody>

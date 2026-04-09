@@ -442,6 +442,23 @@ def vendedor_detalhe(codigo):
         if marca:
             por_marca[marca] += _safe_float(v["TotalPraticado"])
 
+    # Marcas mais vendidas juntas (pares por pedido)
+    from itertools import combinations
+    pedido_marcas = defaultdict(set)
+    for v in vendas_vendedor:
+        marca = v.get("marca") or ""
+        if marca:
+            pedido_marcas[v.get("CodigoPedido") or "?"].add(marca)
+
+    pares_contagem = defaultdict(int)
+    for marcas in pedido_marcas.values():
+        if len(marcas) >= 2:
+            for a, b in combinations(sorted(marcas), 2):
+                pares_contagem[(a, b)] += 1
+
+    top_pares = sorted(pares_contagem.items(), key=lambda x: x[1], reverse=True)[:10]
+    marcas_juntas = [{"marcas": list(par), "pedidos": count} for par, count in top_pares]
+
     total = sum(_safe_float(v["TotalPraticado"]) for v in vendas_vendedor)
 
     return jsonify({
@@ -453,6 +470,7 @@ def vendedor_detalhe(codigo):
         "por_iaf": [{"classificacao": k, "total": v} for k, v in por_iaf.items()],
         "por_ciclo": [{"ciclo": k, "total": v} for k, v in sorted(por_ciclo.items())],
         "por_marca": [{"marca": k, "total": v} for k, v in sorted(por_marca.items(), key=lambda x: x[1], reverse=True)],
+        "marcas_juntas": marcas_juntas,
     })
 
 
