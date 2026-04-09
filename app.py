@@ -640,6 +640,12 @@ def vendedor_detalhe(codigo):
     top_pares = sorted(pares_contagem.items(), key=lambda x: x[1], reverse=True)[:10]
     marcas_juntas = [{"marcas": list(par), "pedidos": count} for par, count in top_pares]
 
+    # Por categoria
+    por_categoria = defaultdict(float)
+    for v in vendas_vendedor:
+        cat = v.get("categoria") or "Outros"
+        por_categoria[cat] += _safe_float(v["TotalPraticado"])
+
     total = sum(_safe_float(v["TotalPraticado"]) for v in vendas_vendedor)
 
     return jsonify({
@@ -652,6 +658,7 @@ def vendedor_detalhe(codigo):
         "por_ciclo": [{"ciclo": k, "total": v} for k, v in sorted(por_ciclo.items())],
         "por_marca": [{"marca": k, "total": v} for k, v in sorted(por_marca.items(), key=lambda x: x[1], reverse=True)],
         "marcas_juntas": marcas_juntas,
+        "por_categoria": [{"categoria": k, "total": v} for k, v in sorted(por_categoria.items(), key=lambda x: x[1], reverse=True)],
     })
 
 

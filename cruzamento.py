@@ -8,6 +8,7 @@ Fluxo:
   5. Sem match               → Geral
 """
 
+import re
 import sqlite3
 from processador import normalizar_sku
 
@@ -20,6 +21,97 @@ PALAVRAS_MAKE = {
     "CORRETIVO", "PO COMPACTO", "GLOSS", "PRIMER", "PALETA",
     "CONTORNO", "ILUMINADOR", "FIXADOR", "LAPIS", "MAKE",
 }
+
+# ─── Categorias de produto ────────────────────────────────────────────────────
+# Ordem importa: categorias mais específicas primeiro.
+# Dentro de cada categoria, keywords mais longas vêm antes para evitar
+# falsos positivos de keywords curtas.
+CATEGORIAS_KEYWORDS = [
+    ("Demonstradores", [
+        "DEMONSTRADOR", "DEMONSTRAD", "DEMON", "FLAC", "DEM", "CJ",
+    ]),
+    ("Cabelos", [
+        "MASCARA CAPILAR", "MASC CAP", "LEAVE-IN", "LEAVE IN",
+        "TRAT CAP", "CONDICIONADOR", "QUERATINA", "CAPILAR",
+        "SHAMPOO", "SHAMPO", "CONDICION", "SIÀGE", "SIAGE",
+        "CACHOS", "MATCH", "AMACI", "SHAMP", "COND",
+    ]),
+    ("Maquiagem", [
+        "MASC CILIO", "BASE STICK", "BASE LIQ", "BLUSH LIQ", "BAT LIQ",
+        "FAC STICK", "HID LAB", "OIL SHIN", "PLT MULTIF", "PO COMP",
+        "CORR LIQ", "SOBRANC", "CORRET", "LAP OLH", "BATOM", "PRIMER",
+        "SOMBRA", "BLUSH", "GLOSS", "ILUM", "MAKE", "BALM", "GLIT",
+        "SOUL", "BASE", "MASC", "SOMB", "GLOS", "PLT", "BAS", "BAT", "PO",
+    ]),
+    ("Perfumaria", [
+        "EDP", "COL",
+    ]),
+    ("Barba", [
+        "BARBA", "BARB",
+    ]),
+    ("Acessórios", [
+        "MASSAGEADOR", "VAPORIZADOR", "FRASQUEIRA", "NECESSAIRE",
+        "APONTADOR", "CURVADOR", "PINCEIS", "ESPELHO", "ESPONJA",
+        "PALETA", "PINCEL", "NECESS", "MASSAG", "MALETA", "TOALHA",
+        "BOLSA", "ESPNJ", "PORTA", "LENCO", "LUVA", "CASE", "CLIP",
+    ]),
+    ("Cuidados com a Pele", [
+        "INSTANCE CR", "CORPORAL", "MAOS", "CPO", "HID", "MAO",
+    ]),
+    ("Cuidados Faciais", [
+        "NEO DERMO", "FACIAL", "SKINQ", "NEO D", "SKIN", "FAC",
+    ]),
+    ("Desodorantes", [
+        "AEROSSOL", "ROLL ON", "BDY SPR", "ANTIT", "AER", "ANT", "DES", "SPR",
+    ]),
+    ("Embalagens", [
+        "KIT TAG", "SACOLA", "TAG",
+    ]),
+    ("Gifts", [
+        "PMPCK", "ESTJ", "KIT",
+    ]),
+    ("Sabonete Corpo", [
+        "ESF CPO", "SAB BARR", "SHW GEL", "SHW", "SAB",
+    ]),
+    ("Solar", [
+        "PROT", "SOL", "PR",
+    ]),
+    ("Unhas", [
+        "ESMALTE", "ESMLT",
+    ]),
+    ("Óleos", [
+        "ÓLEO", "OLEO", "OL",
+    ]),
+]
+
+
+def _tokenizar(nome):
+    """Divide o nome em tokens separados por espaços e pontuação."""
+    return re.split(r"[\s/\-_,\.\(\)]+", nome.upper())
+
+
+def classificar_categoria(nome_produto):
+    """Classifica o produto em uma categoria baseado em keywords no nome.
+    Retorna a categoria encontrada ou 'Outros'."""
+    if not nome_produto:
+        return "Outros"
+    nome_u = nome_produto.upper()
+    tokens = _tokenizar(nome_u)
+
+    for categoria, keywords in CATEGORIAS_KEYWORDS:
+        for kw in keywords:
+            kw = kw.strip().upper()
+            if not kw:
+                continue
+            if " " in kw:
+                # Keyword multi-palavra: busca exata como substring
+                if kw in nome_u:
+                    return categoria
+            else:
+                # Keyword simples: qualquer token deve começar com ela
+                if any(tok.startswith(kw) for tok in tokens if tok):
+                    return categoria
+    return "Outros"
 
 
 def _registrar_sku(indice, sku_norm, entrada):
@@ -141,6 +233,9 @@ def cruzar_vendas(vendas, indice_produtos, indice_iaf):
         else:
             venda["classificacao_iaf"] = "Geral"
             venda["metodo_match"] = "nenhum"
+
+        # ── Categoria do produto ──────────────────────────────────────────
+        venda["categoria"] = classificar_categoria(nome_produto)
 
     return vendas
 

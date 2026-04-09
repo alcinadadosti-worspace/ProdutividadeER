@@ -200,6 +200,24 @@ async function abrirDrawerVendedor(codigo) {
         }).join("")}
       </div>` : ""}
 
+      <!-- Categorias -->
+      ${d.por_categoria?.length ? `
+      <div class="section-title" style="margin-bottom:12px">Categorias de Produto</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:24px">
+        ${d.por_categoria.map(x => {
+          const pct = d.total_faturado ? (x.total / d.total_faturado * 100) : 0;
+          return `
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:140px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.categoria}</div>
+            <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
+              <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px;opacity:0.7"></div>
+            </div>
+            <div style="font-size:12px;font-family:monospace;color:var(--text-secondary);width:90px;text-align:right">${fmtBRL(x.total)}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);width:36px;text-align:right">${pct.toFixed(0)}%</div>
+          </div>`;
+        }).join("")}
+      </div>` : ""}
+
       <!-- Ciclo chart -->
       <div class="section-title" style="margin-bottom:12px">Por Ciclo</div>
       <div style="height:180px;margin-bottom:24px">
