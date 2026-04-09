@@ -19,15 +19,15 @@ async function renderRevendedores() {
       <div class="skeleton" style="height:88px;border-radius:12px"></div>
       <div class="skeleton" style="height:88px;border-radius:12px"></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;align-items:start">
       <div class="chart-card" id="rev-papel-chart-wrap">
         <div class="chart-title">Faturamento por Papel</div>
         <div style="height:220px"><canvas id="rev-papel-chart"></canvas></div>
       </div>
       <div class="chart-card" id="rev-concentracao-wrap">
         <div class="chart-title">Concentração de Vendas (Curva 80/20)</div>
-        <div id="rev-concentracao-content" style="height:220px;display:flex;align-items:center;justify-content:center">
-          <div class="skeleton" style="width:100%;height:100%;border-radius:8px"></div>
+        <div id="rev-concentracao-content">
+          <div class="skeleton" style="height:220px;border-radius:8px"></div>
         </div>
       </div>
     </div>
@@ -145,22 +145,21 @@ function _renderConcentracao(conc, porPapel) {
   }).join("");
 
   wrap.innerHTML = `
-    <div style="width:100%;padding:8px 4px">
-      <!-- Destaque 80/20 -->
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:12px 16px;background:var(--bg-tertiary);border-radius:8px">
-        <div style="text-align:center;flex-shrink:0">
-          <div style="font-size:28px;font-weight:700;font-family:monospace;color:var(--accent-blue)">${pctRev}%</div>
-          <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">dos revendedores</div>
-        </div>
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5">
-          <strong style="color:var(--text-primary)">${fmtNum(qtd)} de ${fmtNum(total)}</strong> revendedores<br>
-          geram <strong style="color:var(--accent-blue)">80%</strong> do faturamento total
-        </div>
+    <!-- Destaque 80/20 -->
+    <div style="display:flex;align-items:center;gap:20px;padding:14px 16px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:20px">
+      <div style="text-align:center;flex-shrink:0;min-width:64px">
+        <div style="font-size:32px;font-weight:700;font-family:monospace;color:var(--accent-blue);line-height:1">${pctRev}%</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">dos revendedores</div>
       </div>
-      <!-- Ticket médio por papel -->
-      <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Ticket Médio por Papel</div>
-      ${papelRows}
+      <div style="width:1px;height:40px;background:var(--border-subtle);flex-shrink:0"></div>
+      <div style="font-size:13px;color:var(--text-secondary);line-height:1.6">
+        <strong style="color:var(--text-primary)">${fmtNum(qtd)} de ${fmtNum(total)}</strong> revendedores<br>
+        geram <strong style="color:var(--accent-blue)">80%</strong> do faturamento total
+      </div>
     </div>
+    <!-- Ticket médio por papel -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Ticket Médio por Papel</div>
+    ${papelRows}
   `;
 }
 
