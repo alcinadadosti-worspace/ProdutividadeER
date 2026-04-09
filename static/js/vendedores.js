@@ -169,11 +169,12 @@ async function abrirDrawerVendedor(codigo) {
       <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:24px">
         ${d.por_marca.map(x => {
           const pct = d.total_faturado ? (x.total / d.total_faturado * 100) : 0;
+          const { cor } = _corMarca(x.marca);
           return `
           <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:120px;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.marca}</div>
+            <div style="width:120px;font-size:12px;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600">${x.marca}</div>
             <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
-              <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px"></div>
+              <div style="width:${pct.toFixed(1)}%;height:100%;background:${cor};border-radius:4px"></div>
             </div>
             <div style="font-size:12px;font-family:monospace;color:var(--text-secondary);width:90px;text-align:right">${fmtBRL(x.total)}</div>
             <div style="font-size:11px;color:var(--text-tertiary);width:36px;text-align:right">${pct.toFixed(0)}%</div>
@@ -185,15 +186,18 @@ async function abrirDrawerVendedor(codigo) {
       ${d.marcas_juntas?.length ? `
       <div class="section-title" style="margin-bottom:12px">Marcas Mais Vendidas Juntas</div>
       <div style="margin-bottom:24px">
-        ${d.marcas_juntas.map((x, i) => `
+        ${d.marcas_juntas.map((x, i) => {
+          const c0 = _corMarca(x.marcas[0]);
+          const c1 = _corMarca(x.marcas[1]);
+          return `
           <div class="marcas-juntas-par">
             <span style="font-size:11px;color:var(--text-tertiary);width:18px;text-align:right;flex-shrink:0">${i + 1}.</span>
-            <span class="marcas-juntas-badge">${x.marcas[0]}</span>
+            <span class="marcas-juntas-badge" style="background:${c0.bg};color:${c0.cor}">${x.marcas[0]}</span>
             <span class="marcas-juntas-sep">+</span>
-            <span class="marcas-juntas-badge" style="background:rgba(167,139,250,0.15);color:var(--accent-purple)">${x.marcas[1]}</span>
+            <span class="marcas-juntas-badge" style="background:${c1.bg};color:${c1.cor}">${x.marcas[1]}</span>
             <span class="marcas-juntas-count">${x.pedidos} pedido${x.pedidos !== 1 ? "s" : ""}</span>
-          </div>
-        `).join("")}
+          </div>`;
+        }).join("")}
       </div>` : ""}
 
       <!-- Ciclo chart -->
@@ -251,4 +255,20 @@ function _iafColor(clf) {
   if (clf === "IAF Cabelos") return "var(--accent-blue)";
   if (clf === "IAF Make")    return "var(--accent-purple)";
   return "var(--text-secondary)";
+}
+
+const _MARCA_CORES = [
+  { match: /eudora/i,              cor: "#A78BFA", bg: "rgba(167,139,250,0.15)" },   // roxo
+  { match: /boticário|boticario/i, cor: "#4ADE80", bg: "rgba(74,222,128,0.15)"  },   // verde
+  { match: /berenice/i,            cor: "#F472B6", bg: "rgba(244,114,182,0.15)" },   // rosa
+  { match: /o\.u\.i|oui\b/i,       cor: "#F87171", bg: "rgba(248,113,113,0.15)" },   // vermelho
+  { match: /aumigos|auamigos/i,    cor: "#FB923C", bg: "rgba(251,146,60,0.15)"  },   // laranja
+];
+
+function _corMarca(nome) {
+  const n = nome || "";
+  for (const { match, cor, bg } of _MARCA_CORES) {
+    if (match.test(n)) return { cor, bg };
+  }
+  return { cor: "#6C9EFF", bg: "rgba(108,158,255,0.15)" }; // azul padrão
 }
