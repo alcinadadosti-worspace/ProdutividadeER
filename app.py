@@ -377,6 +377,34 @@ def status():
     })
 
 
+@app.route("/api/gh-status")
+def gh_status():
+    """Diagnóstico da integração com GitHub."""
+    resultado = {
+        "token_configurado": bool(_GH_TOKEN),
+        "repo": _GH_REPO,
+        "branch": _GH_BRANCH,
+        "arquivo": _GH_FILE,
+    }
+    if not _gh_ok():
+        resultado["erro"] = "GITHUB_TOKEN não configurado"
+        return jsonify(resultado), 200
+
+    try:
+        resp = _gh_request("GET", _GH_FILE)
+        if resp:
+            resultado["arquivo_existe"] = True
+            resultado["tamanho_bytes"]  = resp.get("size", 0)
+            resultado["ultimo_commit"]  = resp.get("sha", "")[:7]
+        else:
+            resultado["arquivo_existe"] = False
+            resultado["info"] = "Arquivo ainda não criado — atribua marcas pelo modal para criá-lo"
+    except Exception as e:
+        resultado["erro_api"] = str(e)
+
+    return jsonify(resultado)
+
+
 @app.route("/api/dashboard")
 def dashboard():
     """KPIs e dados agregados para o dashboard principal."""
