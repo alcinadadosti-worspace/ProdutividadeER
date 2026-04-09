@@ -662,6 +662,171 @@ def vendedor_detalhe(codigo):
     })
 
 
+@app.route("/api/revendedores")
+def revendedores():
+    """Lista de revendedores com métricas, distribuição por papel e concentração 80/20."""
+    _garantir_estado()
+    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    metricas = defaultdict(lambda: {
+        "nome": "", "codigo": "", "papel": "",
+        "total": 0.0, "pedidos": set(), "quantidade": 0,
+        "vendedores": set(),
+    })
+
+    for v in vendas:
+        cod = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
+        m = metricas[cod]
+        m["nome"] = (v.get("Revendedor") or cod).strip()
+        m["codigo"] = cod
+        m["papel"] = v.get("Papel") or "Sem papel"
+        total = _safe_float(v["TotalPraticado"])
+        m["total"] += total
+        if v.get("CodigoPedido"):
+            m["pedidos"].add(v["CodigoPedido"])
+        m["quantidade"] += v.get("Quantidade", 0)
+        vend_cod = v.get("CodigoVendedor") or ""
+        if vend_cod:
+            m["vendedores"].add(vend_cod)
+
+    resultado = []
+    for cod, m in metricas.items():
+        total = m["total"]
+        pedidos = len(m["pedidos"])
+        resultado.append({
+            "codigo": cod,
+            "nome": m["nome"],
+            "papel": m["papel"],
+            "total_faturado": total,
+            "qtd_pedidos": pedidos,
+            "ticket_medio": total / pedidos if pedidos else 0,
+            "quantidade": m["quantidade"],
+            "qtd_vendedores": len(m["vendedores"]),
+        })
+
+    resultado.sort(key=lambda x: x["total_faturado"], reverse=True)
+
+    # ── Distribuição por papel ────────────────────────────────────────────────
+    papel_metricas = defaultdict(lambda: {"total": 0.0, "pedidos": set(), "revendedores": set()})
+    for v in vendas:
+        papel = v.get("Papel") or "Sem papel"
+        papel_metricas[papel]["total"] += _safe_float(v["TotalPraticado"])
+        if v.get("CodigoPedido"):
+            papel_metricas[papel]["pedidos"].add(v["CodigoPedido"])
+        cod = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
+        papel_metricas[papel]["revendedores"].add(cod)
+
+    por_papel = sorted([
+        {
+            "papel": k,
+            "total_faturado": v["total"],
+            "qtd_revendedores": len(v["revendedores"]),
+            "qtd_pedidos": len(v["pedidos"]),
+            "ticket_medio": v["total"] / len(v["pedidos"]) if v["pedidos"] else 0,
+        }
+        for k, v in papel_metricas.items()
+    ], key=lambda x: x["total_faturado"], reverse=True)
+
+    # ── Concentração 80/20 ────────────────────────────────────────────────────
+    total_geral = sum(r["total_faturado"] for r in resultado)
+    acum = 0.0
+    qtd_80 = 0
+    for r in resultado:
+        acum += r["total_faturado"]
+        qtd_80 += 1
+        if acum >= total_geral * 0.8:
+            break
+
+    concentracao = {
+        "total_revendedores": len(resultado),
+        "qtd_80pct": qtd_80,
+        "pct_rev_80pct": round(qtd_80 / len(resultado) * 100, 1) if resultado else 0,
+        "total_faturado": total_geral,
+    }
+
+    return jsonify({
+        "revendedores": resultado,
+        "total": len(resultado),
+        "por_papel": por_papel,
+        "concentracao": concentracao,
+    })
+
+
+@app.route("/api/revendedor/<path:codigo>")
+def revendedor_detalhe(codigo):
+    """Detalhes de um revendedor específico."""
+    _garantir_estado()
+    vendas_rev = [v for v in _estado["vendas"]
+                  if (v.get("CodigoRevendedor") or v.get("Revendedor") or "?") == codigo]
+    if not vendas_rev:
+        return jsonify({"erro": "Revendedor não encontrado"}), 404
+
+    nome  = (vendas_rev[0].get("Revendedor") or codigo).strip()
+    papel = vendas_rev[0].get("Papel") or "—"
+
+    # Pedidos
+    pedidos = defaultdict(lambda: {"codigo": "", "data": "", "vendedor": "", "total": 0.0, "itens": 0})
+    for v in vendas_rev:
+        cod_ped = v.get("CodigoPedido") or "?"
+        p = pedidos[cod_ped]
+        p["codigo"] = cod_ped
+        p["data"] = v.get("DataFaturamento") or v.get("DataCaptacao") or ""
+        p["vendedor"] = v.get("Vendedor") or "—"
+        p["total"] += _safe_float(v["TotalPraticado"])
+        p["itens"] += v.get("Quantidade", 0)
+    lista_pedidos = sorted(pedidos.values(), key=lambda x: x["data"], reverse=True)
+
+    # Por IAF
+    por_iaf = defaultdict(float)
+    for v in vendas_rev:
+        por_iaf[v.get("classificacao_iaf", "Geral")] += _safe_float(v["TotalPraticado"])
+
+    # Por ciclo
+    por_ciclo = defaultdict(float)
+    for v in vendas_rev:
+        por_ciclo[v.get("Ciclo") or "Sem Ciclo"] += _safe_float(v["TotalPraticado"])
+
+    # Top produtos
+    top_prod = defaultdict(lambda: {"sku": "", "nome": "", "total": 0.0, "quantidade": 0})
+    for v in vendas_rev:
+        sku = v.get("CodigoProduto") or "?"
+        top_prod[sku]["sku"] = sku
+        top_prod[sku]["nome"] = v.get("Produto") or sku
+        top_prod[sku]["total"] += _safe_float(v["TotalPraticado"])
+        top_prod[sku]["quantidade"] += v.get("Quantidade", 0)
+    lista_prod = sorted(top_prod.values(), key=lambda x: x["total"], reverse=True)[:20]
+
+    # Vendedores que atenderam
+    vendedores_map = defaultdict(lambda: {"codigo": "", "nome": "", "total": 0.0, "pedidos": set()})
+    for v in vendas_rev:
+        cod_v = v.get("CodigoVendedor") or "?"
+        vendedores_map[cod_v]["codigo"] = cod_v
+        vendedores_map[cod_v]["nome"] = v.get("Vendedor") or cod_v
+        vendedores_map[cod_v]["total"] += _safe_float(v["TotalPraticado"])
+        if v.get("CodigoPedido"):
+            vendedores_map[cod_v]["pedidos"].add(v["CodigoPedido"])
+    lista_vendedores = sorted(
+        [{"codigo": k, "nome": v["nome"], "total": v["total"], "qtd_pedidos": len(v["pedidos"])}
+         for k, v in vendedores_map.items()],
+        key=lambda x: x["total"], reverse=True
+    )
+
+    total = sum(_safe_float(v["TotalPraticado"]) for v in vendas_rev)
+
+    return jsonify({
+        "codigo": codigo,
+        "nome": nome,
+        "papel": papel,
+        "total_faturado": total,
+        "qtd_pedidos": len(pedidos),
+        "pedidos": lista_pedidos[:50],
+        "por_iaf": [{"classificacao": k, "total": v} for k, v in por_iaf.items()],
+        "por_ciclo": [{"ciclo": k, "total": v} for k, v in sorted(por_ciclo.items())],
+        "top_produtos": lista_prod,
+        "vendedores": lista_vendedores,
+    })
+
+
 @app.route("/api/produtos")
 def produtos():
     """Lista de produtos com métricas."""

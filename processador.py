@@ -37,6 +37,7 @@ COLUNAS_MAPEAMENTO = {
     "ciclo faturamento pedido":     "Ciclo",   # nome original do prompt
     "ciclo faturamento":            "Ciclo",   # nome real nos arquivos
     "data faturamento":             "DataFaturamento",
+    "codigo revendedor":            "CodigoRevendedor",
     "revendedor":                   "Revendedor",
     "papel":                        "Papel",
     "plano de pagamento":           "PlanoPagamento",
@@ -190,7 +191,7 @@ def ler_planilha(caminho_arquivo):
 
     # Preencher campos que aparecem só na 1ª linha de cada grupo de pedido
     for campo in ["CodigoVendedor", "Vendedor", "CodigoPedido", "Ciclo",
-                  "CanalDistribuicao", "Revendedor", "Papel", "PlanoPagamento",
+                  "CanalDistribuicao", "CodigoRevendedor", "Revendedor", "Papel", "PlanoPagamento",
                   "CodigoUsuarioCriacao", "UsuarioCriacao",
                   "CodigoUsuarioFinalizacao", "UsuarioFinalizacao"]:
         if campo in df_filtrado.columns:
@@ -221,7 +222,7 @@ def ler_planilha(caminho_arquivo):
         # Strings simples
         for campo in [
             "CodigoVendedor", "Vendedor", "Produto", "CodigoPedido",
-            "Ciclo", "Revendedor", "Papel", "PlanoPagamento",
+            "Ciclo", "CodigoRevendedor", "Revendedor", "Papel", "PlanoPagamento",
             "CodigoUsuarioCriacao", "UsuarioCriacao",
             "CodigoUsuarioFinalizacao", "UsuarioFinalizacao", "CanalDistribuicao",
         ]:

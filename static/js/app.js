@@ -13,12 +13,13 @@ window.APP_FILTROS = {};
 
 // ─── Páginas disponíveis ──────────────────────────────────────────────────
 const PAGINAS = {
-  upload:     { render: renderUpload,     semDados: true },
-  dashboard:  { render: renderDashboard,  semDados: false },
-  vendedores: { render: renderVendedores, semDados: false },
-  produtos:   { render: renderProdutos,   semDados: false },
-  iaf:        { render: renderIaf,        semDados: false },
-  dados:      { render: renderDados,      semDados: false },
+  upload:        { render: renderUpload,        semDados: true },
+  dashboard:     { render: renderDashboard,     semDados: false },
+  vendedores:    { render: renderVendedores,    semDados: false },
+  revendedores:  { render: renderRevendedores,  semDados: false },
+  produtos:      { render: renderProdutos,      semDados: false },
+  iaf:           { render: renderIaf,           semDados: false },
+  dados:         { render: renderDados,         semDados: false },
 };
 
 let _paginaAtual = null;
