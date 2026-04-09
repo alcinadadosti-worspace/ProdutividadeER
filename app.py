@@ -640,11 +640,24 @@ def vendedor_detalhe(codigo):
     top_pares = sorted(pares_contagem.items(), key=lambda x: x[1], reverse=True)[:10]
     marcas_juntas = [{"marcas": list(par), "pedidos": count} for par, count in top_pares]
 
-    # Por categoria
+    # Por categoria + produtos por categoria
     por_categoria = defaultdict(float)
+    prods_por_cat = defaultdict(lambda: defaultdict(lambda: {"sku": "", "nome": "", "total": 0.0, "quantidade": 0}))
     for v in vendas_vendedor:
         cat = v.get("categoria") or "Outros"
-        por_categoria[cat] += _safe_float(v["TotalPraticado"])
+        val = _safe_float(v["TotalPraticado"])
+        por_categoria[cat] += val
+        sku = v.get("CodigoProduto") or v.get("CodigoProduto_normalizado") or "?"
+        p = prods_por_cat[cat][sku]
+        p["sku"] = sku
+        p["nome"] = v.get("Produto") or sku
+        p["total"] += val
+        p["quantidade"] += v.get("Quantidade", 0)
+
+    produtos_por_categoria = {
+        cat: sorted(prods.values(), key=lambda x: x["total"], reverse=True)[:30]
+        for cat, prods in prods_por_cat.items()
+    }
 
     total = sum(_safe_float(v["TotalPraticado"]) for v in vendas_vendedor)
 
@@ -659,6 +672,7 @@ def vendedor_detalhe(codigo):
         "por_marca": [{"marca": k, "total": v} for k, v in sorted(por_marca.items(), key=lambda x: x[1], reverse=True)],
         "marcas_juntas": marcas_juntas,
         "por_categoria": [{"categoria": k, "total": v} for k, v in sorted(por_categoria.items(), key=lambda x: x[1], reverse=True)],
+        "produtos_por_categoria": produtos_por_categoria,
     })
 
 

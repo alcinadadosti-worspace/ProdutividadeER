@@ -203,17 +203,47 @@ async function abrirDrawerVendedor(codigo) {
       <!-- Categorias -->
       ${d.por_categoria?.length ? `
       <div class="section-title" style="margin-bottom:12px">Categorias de Produto</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:24px">
-        ${d.por_categoria.map(x => {
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:24px" id="cat-accordion">
+        ${d.por_categoria.map((x, i) => {
           const pct = d.total_faturado ? (x.total / d.total_faturado * 100) : 0;
+          const catId = `cat-items-${i}`;
           return `
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:140px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.categoria}</div>
-            <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
-              <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px;opacity:0.7"></div>
+          <div class="cat-row" style="border-radius:6px;overflow:hidden;background:var(--bg-secondary)">
+            <div class="cat-header" data-cat="${x.categoria}" data-target="${catId}"
+                 style="display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;user-select:none">
+              <div style="width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+                <svg class="cat-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5" style="color:var(--text-tertiary);transition:transform 200ms">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </div>
+              <div style="width:130px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.categoria}</div>
+              <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden">
+                <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px;opacity:0.7"></div>
+              </div>
+              <div style="font-size:12px;font-family:monospace;color:var(--text-secondary);width:90px;text-align:right">${fmtBRL(x.total)}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);width:36px;text-align:right">${pct.toFixed(0)}%</div>
             </div>
-            <div style="font-size:12px;font-family:monospace;color:var(--text-secondary);width:90px;text-align:right">${fmtBRL(x.total)}</div>
-            <div style="font-size:11px;color:var(--text-tertiary);width:36px;text-align:right">${pct.toFixed(0)}%</div>
+            <div id="${catId}" style="display:none;padding:0 10px 10px 36px">
+              <table style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border-subtle)">
+                    <th style="text-align:left;font-size:11px;color:var(--text-tertiary);padding:4px 0;font-weight:500">Produto</th>
+                    <th style="text-align:right;font-size:11px;color:var(--text-tertiary);padding:4px 0;font-weight:500;width:50px">Qtde</th>
+                    <th style="text-align:right;font-size:11px;color:var(--text-tertiary);padding:4px 0;font-weight:500;width:90px">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(d.produtos_por_categoria?.[x.categoria] || []).map(p => `
+                    <tr style="border-bottom:1px solid var(--border-subtle)">
+                      <td style="font-size:11px;padding:5px 0;color:var(--text-primary);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nome}</td>
+                      <td style="font-size:11px;font-family:monospace;text-align:right;padding:5px 0;color:var(--text-secondary)">${fmtNum(p.quantidade)}</td>
+                      <td style="font-size:11px;font-family:monospace;text-align:right;padding:5px 0;color:var(--text-secondary)">${fmtBRL(p.total)}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
           </div>`;
         }).join("")}
       </div>` : ""}
@@ -247,6 +277,18 @@ async function abrirDrawerVendedor(codigo) {
         </table>
       </div>
     `;
+
+    // Accordion de categorias
+    content.querySelectorAll(".cat-header").forEach(header => {
+      header.addEventListener("click", () => {
+        const targetId = header.dataset.target;
+        const panel = document.getElementById(targetId);
+        const chevron = header.querySelector(".cat-chevron");
+        const open = panel.style.display !== "none";
+        panel.style.display = open ? "none" : "block";
+        chevron.style.transform = open ? "" : "rotate(90deg)";
+      });
+    });
 
     // Chart por ciclo
     if (d.por_ciclo.length) {
