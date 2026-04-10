@@ -13,9 +13,10 @@ import threading
 import urllib.request
 import urllib.error
 from collections import defaultdict
-from datetime import datetime
+import secrets as _secrets_mod
+from datetime import datetime, timedelta
 
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, session, g
 
 from processador import ler_planilha, preview_planilha, normalizar_sku
 from cruzamento import criar_indices, cruzar_vendas
@@ -107,66 +108,105 @@ def _gh_salvar_marcas(marcas_dict):
         return False, str(e)
 
 
-# ─── Estado em memória ────────────────────────────────────────────────────────
-_estado = {
-    "vendas": [],
-    "arquivo_nome": None,
-    "processado_em": None,
-    "indice_produtos": None,
-    "indice_iaf": None,
-    "marcas_usuario": {},   # {sku_norm: {"nome": str, "marca": str}} — persiste entre importações
-}
+# ─── Sessões por usuário ──────────────────────────────────────────────────────
+# Cada browser recebe um session ID único (cookie). O estado (vendas, filtros,
+# índices) fica isolado por sessão — múltiplos usuários não se interferem.
+
+app.secret_key = os.environ.get("SECRET_KEY", "alcina-maria-2026-chave-sessao")
+app.permanent_session_lifetime = timedelta(days=30)
+
+_sessoes = {}   # sid -> estado dict
+
+
+def _sid():
+    """Retorna (ou cria) o ID de sessão do browser atual."""
+    if "sid" not in session:
+        session["sid"] = _secrets_mod.token_hex(16)
+        session.permanent = True
+    return session["sid"]
+
+
+def _state_file_sid(sid):
+    return os.path.join(BASE_DIR, f"_state_{sid}.json")
+
+
+def _tmp_path_sid(sid, ext):
+    return os.path.join(BASE_DIR, f"_upload_tmp_{sid}{ext}")
+
+
+def _estado_inicial():
+    return {
+        "vendas": [],
+        "arquivo_nome": None,
+        "processado_em": None,
+        "indice_produtos": None,
+        "indice_iaf": None,
+        "marcas_usuario": {},
+    }
+
+
+def _carregar_estado_sessao(sid, est):
+    """Carrega estado do disco para a sessão. Marcas do GitHub têm prioridade."""
+    sf = _state_file_sid(sid)
+    if os.path.exists(sf):
+        try:
+            with open(sf, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            est["vendas"]         = data.get("vendas", [])
+            est["arquivo_nome"]   = data.get("arquivo_nome")
+            est["processado_em"]  = data.get("processado_em")
+            est["marcas_usuario"] = data.get("marcas_usuario", {})
+            if est["vendas"]:
+                app.logger.info(f"[Sessão {sid[:8]}] {len(est['vendas'])} registros restaurados")
+        except Exception as e:
+            app.logger.warning(f"Erro ao carregar sessão: {e}")
+
+    # Marcas do GitHub são o catálogo global compartilhado entre sessões
+    marcas_gh = _gh_ler_marcas()
+    if marcas_gh:
+        est["marcas_usuario"].update(marcas_gh)
+
+
+@app.before_request
+def _carregar_sessao():
+    """Carrega estado da sessão em g.est antes de cada request."""
+    if request.endpoint in (None, "static"):
+        return
+    sid = _sid()
+    if sid not in _sessoes:
+        est = _estado_inicial()
+        _carregar_estado_sessao(sid, est)
+        _sessoes[sid] = est
+    g.est = _sessoes[sid]
 
 
 def _salvar_estado():
-    """Persiste vendas, metadados e marcas do usuário em disco."""
+    """Persiste estado da sessão atual em disco."""
+    sid = session.get("sid", "")
+    if not sid:
+        return
+    est = g.est
     try:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
+        with open(_state_file_sid(sid), "w", encoding="utf-8") as f:
             json.dump({
-                "vendas": _estado["vendas"],
-                "arquivo_nome": _estado["arquivo_nome"],
-                "processado_em": _estado["processado_em"],
-                "marcas_usuario": _estado["marcas_usuario"],
+                "vendas": est["vendas"],
+                "arquivo_nome": est["arquivo_nome"],
+                "processado_em": est["processado_em"],
+                "marcas_usuario": est["marcas_usuario"],
             }, f, ensure_ascii=False)
     except Exception as e:
         app.logger.warning(f"Não foi possível salvar estado: {e}")
 
 
-def _carregar_estado_disco():
-    """Carrega estado salvo em disco ao iniciar (se existir).
-    Marcas do GitHub têm prioridade — são a fonte permanente de verdade."""
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            _estado["vendas"]         = data.get("vendas", [])
-            _estado["arquivo_nome"]   = data.get("arquivo_nome")
-            _estado["processado_em"]  = data.get("processado_em")
-            _estado["marcas_usuario"] = data.get("marcas_usuario", {})
-            if _estado["vendas"]:
-                app.logger.info(f"Estado restaurado: {len(_estado['vendas'])} registros")
-        except Exception as e:
-            app.logger.warning(f"Não foi possível carregar estado do disco: {e}")
-
-    # GitHub sobrescreve marcas locais (fonte permanente)
-    marcas_gh = _gh_ler_marcas()
-    if marcas_gh:
-        _estado["marcas_usuario"].update(marcas_gh)
-        app.logger.info(f"[GitHub] {len(marcas_gh)} marcas carregadas do catálogo")
-
-
 def _carregar_indices():
-    if _estado["indice_produtos"] is None or _estado["indice_iaf"] is None:
-        _estado["indice_produtos"], _estado["indice_iaf"] = criar_indices(DB_PATH)
-    return _estado["indice_produtos"], _estado["indice_iaf"]
+    if g.est["indice_produtos"] is None or g.est["indice_iaf"] is None:
+        g.est["indice_produtos"], g.est["indice_iaf"] = criar_indices(DB_PATH)
+    return g.est["indice_produtos"], g.est["indice_iaf"]
 
 
 def _persistir_produtos_novos(vendas):
-    """Insere no produtos.db os produtos que ainda não estão no catálogo.
-    Salva SKU + nome (marca vazia) para que na próxima importação já sejam
-    reconhecidos e não apareçam no modal de cadastro novamente."""
+    """Insere no produtos.db os produtos que ainda não estão no catálogo."""
     try:
-        # Coletar produtos únicos sem marca (não estão no catálogo)
         novos = {}
         for v in vendas:
             if v.get("em_catalogo"):
@@ -194,16 +234,15 @@ def _persistir_produtos_novos(vendas):
 
         if inseridos:
             app.logger.info(f"[Catálogo] {inseridos} produtos novos inseridos no DB")
-            # Invalidar cache para que o próximo cruzamento os reconheça
-            _estado["indice_produtos"] = None
-            _estado["indice_iaf"]      = None
+            g.est["indice_produtos"] = None
+            g.est["indice_iaf"]      = None
     except Exception as e:
         app.logger.warning(f"[Catálogo] Erro ao persistir produtos novos: {e}")
 
 
 def _aplicar_marcas_usuario(vendas):
-    """Aplica marcas definidas pelo usuário sobre vendas sem marca (sobrescreve resultado do cruzamento)."""
-    mu = _estado.get("marcas_usuario", {})
+    """Aplica marcas definidas pelo usuário sobre vendas sem marca."""
+    mu = g.est.get("marcas_usuario", {})
     if not mu:
         return vendas
     for v in vendas:
@@ -212,17 +251,6 @@ def _aplicar_marcas_usuario(vendas):
             v["marca"] = mu[sku_norm]["marca"]
             v["em_catalogo"] = True
     return vendas
-
-
-def _garantir_estado():
-    """Se a memória está vazia, tenta recarregar do disco (resiliência a reinicializações)."""
-    if not _estado["vendas"] and os.path.exists(STATE_FILE):
-        _carregar_estado_disco()
-
-
-# Carregar estado salvo ao iniciar
-with app.app_context():
-    _carregar_estado_disco()
 
 
 # ─── Helpers de filtro ────────────────────────────────────────────────────────
@@ -275,8 +303,8 @@ def upload():
     if ext not in (".xlsx", ".xls", ".csv"):
         return jsonify({"erro": "Formato inválido. Envie um arquivo .xlsx ou .csv"}), 400
 
-    # Salvar temporariamente preservando a extensão (processador detecta pelo nome)
-    tmp_path = os.path.join(os.path.dirname(__file__), f"_upload_tmp{ext}")
+    # Salvar temporariamente por sessão (cada usuário tem seu próprio arquivo)
+    tmp_path = _tmp_path_sid(_sid(), ext)
     arquivo.save(tmp_path)
 
     try:
@@ -295,10 +323,10 @@ def upload():
 @app.route("/api/processar", methods=["POST"])
 def processar():
     """Processa o arquivo temporário já uploadado."""
-    base = os.path.dirname(__file__)
+    sid = _sid()
     tmp_path = None
     for ext in (".xlsx", ".xls", ".csv"):
-        candidate = os.path.join(base, f"_upload_tmp{ext}")
+        candidate = _tmp_path_sid(sid, ext)
         if os.path.exists(candidate):
             tmp_path = candidate
             break
@@ -312,8 +340,8 @@ def processar():
 
         # Forçar recarregamento dos índices do DB para pegar produtos cadastrados
         # manualmente em sessões anteriores (invalida cache)
-        _estado["indice_produtos"] = None
-        _estado["indice_iaf"] = None
+        g.est["indice_produtos"] = None
+        g.est["indice_iaf"] = None
         indice_produtos, indice_iaf = _carregar_indices()
 
         vendas = cruzar_vendas(vendas, indice_produtos, indice_iaf)
@@ -321,17 +349,11 @@ def processar():
         # Persistir produtos novos no DB automaticamente
         _persistir_produtos_novos(vendas)
 
-        # Recarregar marcas: disco + GitHub (fonte permanente)
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    _disk = json.load(f)
-                _estado["marcas_usuario"] = _disk.get("marcas_usuario", _estado.get("marcas_usuario", {}))
-            except Exception:
-                pass
+        # Marcas já estão em g.est["marcas_usuario"] (carregadas na sessão)
+        # Atualizar com eventuais novidades do GitHub
         marcas_gh = _gh_ler_marcas()
         if marcas_gh:
-            _estado["marcas_usuario"].update(marcas_gh)
+            g.est["marcas_usuario"].update(marcas_gh)
 
         vendas = _aplicar_marcas_usuario(vendas)
 
@@ -339,23 +361,23 @@ def processar():
         # Chave de deduplicação: CodigoPedido + CodigoProduto_normalizado
         existentes = {
             (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "")
-            for v in _estado["vendas"]
+            for v in g.est["vendas"]
         }
         novas = [
             v for v in vendas
             if (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "") not in existentes
         ]
-        _estado["vendas"] = _estado["vendas"] + novas
-        _estado["arquivo_nome"] = nome_arquivo
-        _estado["processado_em"] = datetime.now().isoformat()
+        g.est["vendas"] = g.est["vendas"] + novas
+        g.est["arquivo_nome"] = nome_arquivo
+        g.est["processado_em"] = datetime.now().isoformat()
         _salvar_estado()
 
-        ciclos = sorted({v.get("Ciclo") or "" for v in _estado["vendas"]} - {""})
+        ciclos = sorted({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
         return jsonify({
             "ok": True,
-            "total_processado": len(_estado["vendas"]),
+            "total_processado": len(g.est["vendas"]),
             "novos_registros": len(novas),
-            "processado_em": _estado["processado_em"],
+            "processado_em": g.est["processado_em"],
             "ciclos": ciclos,
         })
     except Exception as e:
@@ -366,14 +388,16 @@ def processar():
 @app.route("/api/limpar", methods=["POST"])
 def limpar():
     """Remove todos os dados processados e reseta o estado."""
-    _estado["vendas"] = []
-    _estado["arquivo_nome"] = None
-    _estado["processado_em"] = None
-    _estado["indice_produtos"] = None
-    _estado["indice_iaf"] = None
+    sid = session.get("sid", "")
+    g.est["vendas"] = []
+    g.est["arquivo_nome"] = None
+    g.est["processado_em"] = None
+    g.est["indice_produtos"] = None
+    g.est["indice_iaf"] = None
     try:
-        if os.path.exists(STATE_FILE):
-            os.remove(STATE_FILE)
+        sf = _state_file_sid(sid)
+        if sid and os.path.exists(sf):
+            os.remove(sf)
     except Exception:
         pass
     return jsonify({"ok": True})
@@ -385,28 +409,28 @@ def limpar_ciclo():
     ciclo = (request.json or {}).get("ciclo", "")
     if not ciclo:
         return jsonify({"erro": "Ciclo não informado"}), 400
-    antes = len(_estado["vendas"])
-    _estado["vendas"] = [v for v in _estado["vendas"] if v.get("Ciclo") != ciclo]
-    removidos = antes - len(_estado["vendas"])
-    if not _estado["vendas"]:
-        _estado["arquivo_nome"] = None
-        _estado["processado_em"] = None
+    antes = len(g.est["vendas"])
+    g.est["vendas"] = [v for v in g.est["vendas"] if v.get("Ciclo") != ciclo]
+    removidos = antes - len(g.est["vendas"])
+    if not g.est["vendas"]:
+        g.est["arquivo_nome"] = None
+        g.est["processado_em"] = None
     _salvar_estado()
-    ciclos = sorted({v.get("Ciclo") or "" for v in _estado["vendas"]} - {""})
-    return jsonify({"ok": True, "removidos": removidos, "total": len(_estado["vendas"]), "ciclos": ciclos})
+    ciclos = sorted({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
+    return jsonify({"ok": True, "removidos": removidos, "total": len(g.est["vendas"]), "ciclos": ciclos})
 
 
 @app.route("/api/status")
 def status():
     """Retorna status atual do processamento."""
-    _garantir_estado()
-    vendas = _estado["vendas"]
+
+    vendas = g.est["vendas"]
     ciclos = sorted({v.get("Ciclo") or "" for v in vendas} - {""})
     return jsonify({
         "tem_dados": len(vendas) > 0,
-        "arquivo_nome": _estado["arquivo_nome"],
+        "arquivo_nome": g.est["arquivo_nome"],
         "total_registros": len(vendas),
-        "processado_em": _estado["processado_em"],
+        "processado_em": g.est["processado_em"],
         "ciclos": ciclos,
     })
 
@@ -442,8 +466,8 @@ def gh_status():
 @app.route("/api/dashboard")
 def dashboard():
     """KPIs e dados agregados para o dashboard principal."""
-    _garantir_estado()
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     if not vendas:
         return jsonify(_dashboard_vazio())
@@ -508,14 +532,14 @@ def dashboard():
     ]
 
     # Filtros disponíveis
-    ciclos = sorted({v.get("Ciclo") or "" for v in _estado["vendas"]} - {""})
-    unidades = sorted({v.get("Unidade") or "" for v in _estado["vendas"]} - {""})
+    ciclos = sorted({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
+    unidades = sorted({v.get("Unidade") or "" for v in g.est["vendas"]} - {""})
     classificacoes = ["IAF Cabelos", "IAF Make", "Geral"]
     vendedores_lista = sorted(
-        {(v.get("CodigoVendedor") or "", v.get("Vendedor") or "") for v in _estado["vendas"]},
+        {(v.get("CodigoVendedor") or "", v.get("Vendedor") or "") for v in g.est["vendas"]},
         key=lambda x: x[1]
     )
-    papeis = sorted({v.get("Papel") or "" for v in _estado["vendas"]} - {""})
+    papeis = sorted({v.get("Papel") or "" for v in g.est["vendas"]} - {""})
 
     return jsonify({
         "kpis": {
@@ -525,7 +549,7 @@ def dashboard():
             "total_itens": total_itens,
         },
         "periodo": {"inicio": periodo_inicio, "fim": periodo_fim},
-        "arquivo_nome": _estado["arquivo_nome"],
+        "arquivo_nome": g.est["arquivo_nome"],
         "total_registros": len(vendas),
         "por_ciclo": [{"ciclo": k, "total": v} for k, v in sorted(por_ciclo.items())],
         "por_unidade": [{"unidade": k, "total": v} for k, v in por_unidade.items()],
@@ -559,8 +583,8 @@ def _dashboard_vazio():
 @app.route("/api/comparativo")
 def comparativo():
     """Comparativo de faturamento entre ciclos por vendedor e por categoria."""
-    _garantir_estado()
-    vendas = _estado["vendas"]
+
+    vendas = g.est["vendas"]
     if not vendas:
         return jsonify({"ciclos": [], "por_vendedor": [], "por_categoria": []})
 
@@ -600,8 +624,8 @@ def comparativo():
 @app.route("/api/vendedores")
 def vendedores():
     """Lista de vendedores com métricas."""
-    _garantir_estado()
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     metricas = defaultdict(lambda: {
         "nome": "", "codigo": "",
@@ -657,8 +681,8 @@ def vendedores():
 @app.route("/api/vendedor/<path:codigo>")
 def vendedor_detalhe(codigo):
     """Detalhes de um vendedor específico."""
-    _garantir_estado()
-    vendas_vendedor = [v for v in _estado["vendas"] if v.get("CodigoVendedor") == codigo]
+
+    vendas_vendedor = [v for v in g.est["vendas"] if v.get("CodigoVendedor") == codigo]
     if not vendas_vendedor:
         return jsonify({"erro": "Vendedor não encontrado"}), 404
 
@@ -750,8 +774,8 @@ def vendedor_detalhe(codigo):
 @app.route("/api/revendedores")
 def revendedores():
     """Lista de revendedores com métricas, distribuição por papel e concentração 80/20."""
-    _garantir_estado()
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     metricas = defaultdict(lambda: {
         "nome": "", "codigo": "", "papel": "",
@@ -840,8 +864,8 @@ def revendedores():
 @app.route("/api/revendedor/<path:codigo>")
 def revendedor_detalhe(codigo):
     """Detalhes de um revendedor específico."""
-    _garantir_estado()
-    vendas_rev = [v for v in _estado["vendas"]
+
+    vendas_rev = [v for v in g.est["vendas"]
                   if (v.get("CodigoRevendedor") or v.get("Revendedor") or "?") == codigo]
     if not vendas_rev:
         return jsonify({"erro": "Revendedor não encontrado"}), 404
@@ -915,8 +939,8 @@ def revendedor_detalhe(codigo):
 @app.route("/api/produtos")
 def produtos():
     """Lista de produtos com métricas."""
-    _garantir_estado()
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     metricas = defaultdict(lambda: {
         "sku": "", "nome": "", "marca": "", "em_catalogo": False,
@@ -944,8 +968,8 @@ def produtos():
 @app.route("/api/iaf")
 def iaf():
     """Dados detalhados de análise IAF."""
-    _garantir_estado()
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     total_geral = sum(_safe_float(v["TotalPraticado"]) for v in vendas)
 
@@ -1003,8 +1027,8 @@ def iaf():
 @app.route("/api/filtros")
 def filtros():
     """Retorna as opções de filtro disponíveis (ciclos, unidades, classificações)."""
-    _garantir_estado()
-    vendas = _estado["vendas"]
+
+    vendas = g.est["vendas"]
     if not vendas:
         return jsonify({"ciclos": [], "unidades": [], "classificacoes": [], "vendedores": [], "papeis": []})
 
@@ -1029,10 +1053,10 @@ def filtros():
 @app.route("/api/produtos/sem-marca")
 def produtos_sem_marca():
     """Retorna produtos únicos sem marca (nem no DB nem nas marcas do usuário)."""
-    _garantir_estado()
-    mu = _estado.get("marcas_usuario", {})
+
+    mu = g.est.get("marcas_usuario", {})
     vistos = {}
-    for v in _estado["vendas"]:
+    for v in g.est["vendas"]:
         if v.get("marca"):
             continue
         sku = v.get("CodigoProduto_normalizado") or v.get("CodigoProduto") or "?"
@@ -1086,7 +1110,7 @@ def cadastrar_produtos():
             continue
 
         # 1. Guardar nas marcas do usuário (persiste no state.json — fonte da verdade)
-        _estado["marcas_usuario"][sku_norm] = {"nome": nome, "marca": marca}
+        g.est["marcas_usuario"][sku_norm] = {"nome": nome, "marca": marca}
         salvos += 1
 
         # 2. Tentar gravar no DB (best-effort; no Render é efêmero mas funciona na sessão)
@@ -1111,14 +1135,14 @@ def cadastrar_produtos():
             app.logger.warning(f"Não foi possível gravar no DB: {e}")
 
     # Invalidar cache dos índices para que a próxima importação recarregue do DB
-    _estado["indice_produtos"] = None
-    _estado["indice_iaf"] = None
+    g.est["indice_produtos"] = None
+    g.est["indice_iaf"] = None
 
     # Salvar no GitHub (persistência permanente entre deploys)
-    gh_ok, gh_erro = _gh_salvar_marcas(_estado["marcas_usuario"])
+    gh_ok, gh_erro = _gh_salvar_marcas(g.est["marcas_usuario"])
 
     # Aplicar marcas do usuário diretamente nas vendas em memória
-    _aplicar_marcas_usuario(_estado["vendas"])
+    _aplicar_marcas_usuario(g.est["vendas"])
     _salvar_estado()
 
     return jsonify({"ok": True, "salvos": salvos, "github": {"ok": gh_ok, "erro": gh_erro}})
@@ -1127,8 +1151,8 @@ def cadastrar_produtos():
 @app.route("/api/dados")
 def dados():
     """Dados brutos paginados."""
-    _garantir_estado()
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     # Busca global
     search = request.args.get("search", "").strip().lower()
@@ -1173,7 +1197,7 @@ def dados():
 @app.route("/api/export/csv")
 def export_csv():
     """Exporta todos os dados processados como CSV."""
-    vendas = _aplicar_filtros(_estado["vendas"], request.args)
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
     campos = [
         "CodigoVendedor", "Vendedor", "CodigoProduto", "Produto",
@@ -1190,7 +1214,7 @@ def export_csv():
     writer.writerows(vendas)
 
     output.seek(0)
-    nome_arquivo = (_estado["arquivo_nome"] or "vendas").replace(".xlsx", "")
+    nome_arquivo = (g.est["arquivo_nome"] or "vendas").replace(".xlsx", "")
     return send_file(
         io.BytesIO(output.getvalue().encode("utf-8-sig")),
         mimetype="text/csv",
