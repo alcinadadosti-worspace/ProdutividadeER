@@ -212,6 +212,16 @@ def _carregar_sessao():
         est = _estado_inicial()
         _carregar_estado_sessao(sid, est)
         _sessoes[sid] = est
+    else:
+        # Cache em memória existe mas pode estar desatualizado se outro worker Gunicorn
+        # processou dados após este worker ter inicializado a sessão com estado vazio.
+        # Solução: se o cache local está vazio mas há arquivo no disco, recarregar.
+        est = _sessoes[sid]
+        if not est["vendas"]:
+            sf = _state_file_sid(sid)
+            if os.path.exists(sf):
+                app.logger.info(f"[Sessão {sid[:8]}] Cache vazio com disco presente — recarregando (sync multi-worker)")
+                _carregar_estado_sessao(sid, est)
     g.est = _sessoes[sid]
 
 
