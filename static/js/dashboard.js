@@ -54,7 +54,7 @@ function _templateDashboard(d) {
 
     <!-- KPIs -->
     <div class="kpi-grid">
-      <div class="kpi-card">
+      <div class="kpi-card" onclick="navegarPara('vendedores')" style="cursor:pointer" title="Ver vendedores">
         <div class="kpi-header">
           <span class="kpi-label">Total Faturado</span>
           <div class="kpi-icon blue"><i data-lucide="trending-up"></i></div>
@@ -62,7 +62,7 @@ function _templateDashboard(d) {
         <div class="kpi-value">${fmtBRL(kpi.total_faturado)}</div>
         <div class="kpi-sub">Soma de todos os pedidos</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" onclick="navegarPara('revendedores')" style="cursor:pointer" title="Ver revendedores">
         <div class="kpi-header">
           <span class="kpi-label">Total de Pedidos</span>
           <div class="kpi-icon green"><i data-lucide="shopping-bag"></i></div>
@@ -70,7 +70,7 @@ function _templateDashboard(d) {
         <div class="kpi-value">${fmtNum(kpi.total_pedidos)}</div>
         <div class="kpi-sub">Pedidos únicos</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" onclick="navegarPara('produtos')" style="cursor:pointer" title="Ver produtos">
         <div class="kpi-header">
           <span class="kpi-label">Ticket Médio</span>
           <div class="kpi-icon purple"><i data-lucide="receipt"></i></div>
@@ -78,7 +78,7 @@ function _templateDashboard(d) {
         <div class="kpi-value">${fmtBRL(kpi.ticket_medio)}</div>
         <div class="kpi-sub">Por pedido</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" onclick="navegarPara('iaf')" style="cursor:pointer" title="Ver análise IAF">
         <div class="kpi-header">
           <span class="kpi-label">Itens Vendidos</span>
           <div class="kpi-icon orange"><i data-lucide="package"></i></div>
@@ -256,7 +256,7 @@ function _renderGraficos(d) {
     }, donutOptions());
   }
 
-  // Top vendedores (horizontal bar)
+  // Top vendedores (horizontal bar) — clicável para abrir drawer
   if (d.top_vendedores.length) {
     criarOuAtualizar("chart-vendedores", "bar", {
       labels: d.top_vendedores.map(x => _abreviarNome(x.nome)),
@@ -267,7 +267,18 @@ function _renderGraficos(d) {
         borderWidth: 1,
         borderRadius: 4,
       }],
-    }, barOptions(true, { plugins: { tooltip: { ...TOOLTIP_STYLE, callbacks: { label: ctx => " " + fmtBRL(ctx.raw) } } } }));
+    }, barOptions(true, {
+      plugins: { tooltip: { ...TOOLTIP_STYLE, callbacks: { label: ctx => " " + fmtBRL(ctx.raw) } } },
+      onClick: (_, elements) => {
+        if (!elements.length) return;
+        const idx = elements[0].index;
+        const cod = d.top_vendedores[idx]?.codigo;
+        if (cod) abrirDrawerVendedor(cod);
+      },
+      onHover: (event, elements) => {
+        event.native.target.style.cursor = elements.length ? "pointer" : "default";
+      },
+    }));
   }
 }
 

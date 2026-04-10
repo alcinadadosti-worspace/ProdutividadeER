@@ -177,6 +177,30 @@ function criarOuAtualizar(canvasId, tipo, dados, opcoes) {
 }
 
 /**
+ * Gera e faz download de um arquivo CSV a partir de uma matriz de linhas.
+ * @param {Array[]} linhas - Primeira linha é o cabeçalho
+ * @param {string} nomeArquivo
+ */
+function _downloadCSV(linhas, nomeArquivo) {
+  const BOM = "\uFEFF"; // UTF-8 BOM para Excel reconhecer acentos
+  const csv = BOM + linhas.map(row =>
+    row.map(cel => {
+      const s = String(cel ?? "");
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(",")
+  ).join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = nomeArquivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
  * Destroi todos os gráficos de uma lista de IDs
  */
 function destruirGraficos(...ids) {

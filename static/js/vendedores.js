@@ -16,6 +16,7 @@ async function renderVendedores() {
       <div class="table-toolbar">
         <span class="table-toolbar-title" id="vend-count">Carregando...</span>
         <div class="table-toolbar-right">
+          <button class="btn-ghost btn-sm" id="vend-export"><i data-lucide="download"></i> Exportar CSV</button>
           <input type="text" class="search-input" id="vend-search" placeholder="Buscar vendedor..." />
         </div>
       </div>
@@ -34,6 +35,16 @@ async function renderVendedores() {
     _vendData = data.vendedores;
     document.getElementById("vend-count").textContent = `${fmtNum(data.total)} vendedores`;
     _renderTabelaVendedores(_vendData);
+
+    document.getElementById("vend-export").addEventListener("click", () => {
+      const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make"];
+      const rows = _vendData.map(v => [
+        v.nome, v.codigo, v.total_faturado.toFixed(2), v.qtd_pedidos,
+        v.ticket_medio.toFixed(2), v.quantidade, v.qtd_marcas ?? "",
+        v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1)
+      ]);
+      _downloadCSV([header, ...rows], "vendedores.csv");
+    });
 
     document.getElementById("vend-search").addEventListener("input", e => {
       const q = e.target.value.toLowerCase();

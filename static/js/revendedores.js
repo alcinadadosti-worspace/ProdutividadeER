@@ -35,6 +35,7 @@ async function renderRevendedores() {
       <div class="table-toolbar">
         <span class="table-toolbar-title" id="rev-count">Carregando...</span>
         <div class="table-toolbar-right">
+          <button class="btn-ghost btn-sm" id="rev-export"><i data-lucide="download"></i> Exportar CSV</button>
           <input type="text" class="search-input" id="rev-search" placeholder="Buscar revendedor..." />
         </div>
       </div>
@@ -115,6 +116,15 @@ async function renderRevendedores() {
     // ── Contador e tabela ────────────────────────────────────────────────────
     document.getElementById("rev-count").textContent = `${fmtNum(data.total)} revendedores`;
     _renderTabelaRevendedores(_revData);
+
+    document.getElementById("rev-export").addEventListener("click", () => {
+      const header = ["Revendedor","Código","Papel","Faturamento","Pedidos","Ticket Médio","Itens","Vendedores"];
+      const rows = _revData.map(r => [
+        r.nome, r.codigo, r.papel, r.total_faturado.toFixed(2),
+        r.qtd_pedidos, r.ticket_medio.toFixed(2), r.quantidade, r.qtd_vendedores
+      ]);
+      _downloadCSV([header, ...rows], "revendedores.csv");
+    });
 
     document.getElementById("rev-search").addEventListener("input", e => {
       const q = e.target.value.toLowerCase();

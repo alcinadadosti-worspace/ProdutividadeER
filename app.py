@@ -526,6 +526,47 @@ def _dashboard_vazio():
     }
 
 
+@app.route("/api/comparativo")
+def comparativo():
+    """Comparativo de faturamento entre ciclos por vendedor e por categoria."""
+    _garantir_estado()
+    vendas = _estado["vendas"]
+    if not vendas:
+        return jsonify({"ciclos": [], "por_vendedor": [], "por_categoria": []})
+
+    ciclos = sorted({v.get("Ciclo") or "" for v in vendas} - {""})
+
+    # ── Por vendedor ──────────────────────────────────────────────────────────
+    vend_ciclo = defaultdict(lambda: defaultdict(float))
+    vend_nome  = {}
+    for v in vendas:
+        cod   = v.get("CodigoVendedor") or "?"
+        ciclo = v.get("Ciclo") or "Sem Ciclo"
+        vend_nome[cod] = v.get("Vendedor") or cod
+        vend_ciclo[cod][ciclo] += _safe_float(v["TotalPraticado"])
+
+    por_vendedor = sorted([
+        {"codigo": cod, "nome": vend_nome[cod],
+         "por_ciclo": {c: vend_ciclo[cod].get(c, 0) for c in ciclos}}
+        for cod in vend_ciclo
+    ], key=lambda x: sum(x["por_ciclo"].values()), reverse=True)
+
+    # ── Por categoria ─────────────────────────────────────────────────────────
+    cat_ciclo = defaultdict(lambda: defaultdict(float))
+    for v in vendas:
+        cat   = v.get("categoria") or "Outros"
+        ciclo = v.get("Ciclo") or "Sem Ciclo"
+        cat_ciclo[cat][ciclo] += _safe_float(v["TotalPraticado"])
+
+    por_categoria = sorted([
+        {"categoria": cat,
+         "por_ciclo": {c: cat_ciclo[cat].get(c, 0) for c in ciclos}}
+        for cat in cat_ciclo
+    ], key=lambda x: sum(x["por_ciclo"].values()), reverse=True)
+
+    return jsonify({"ciclos": ciclos, "por_vendedor": por_vendedor, "por_categoria": por_categoria})
+
+
 @app.route("/api/vendedores")
 def vendedores():
     """Lista de vendedores com métricas."""

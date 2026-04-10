@@ -17,6 +17,7 @@ const PAGINAS = {
   dashboard:     { render: renderDashboard,     semDados: false },
   vendedores:    { render: renderVendedores,    semDados: false },
   revendedores:  { render: renderRevendedores,  semDados: false },
+  comparativo:   { render: renderComparativo,   semDados: false },
   produtos:      { render: renderProdutos,      semDados: false },
   iaf:           { render: renderIaf,           semDados: false },
   dados:         { render: renderDados,         semDados: false },
