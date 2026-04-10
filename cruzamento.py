@@ -44,7 +44,7 @@ CATEGORIAS_KEYWORDS = [
         "SOUL", "BASE", "MASC", "SOMB", "GLOS", "PLT", "BAS", "BAT", "PO",
     ]),
     ("Perfumaria", [
-        "EDP", "COL",
+        "PARFUM", "PARFUN", "EDP", "EAU", "COL",
     ]),
     ("Barba", [
         "BARBA", "BARB",
