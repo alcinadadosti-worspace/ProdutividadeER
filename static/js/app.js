@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const data = await res.json();
     _temDados = data.tem_dados;
     if (_temDados) {
-      atualizarStatusBadge(data.total_registros);
+      atualizarStatusBadge(data.total_registros, data.ciclos);
       // Popular filtros globais imediatamente (sem depender do dashboard carregar primeiro)
       fetch("/api/filtros").then(r => r.json()).then(f => _atualizarFiltrosBar(f)).catch(() => {});
     }
@@ -147,12 +147,16 @@ function toggleFiltro(tipo, valor) {
 }
 
 // ─── Status badge ──────────────────────────────────────────────────────────
-function atualizarStatusBadge(total) {
+function atualizarStatusBadge(total, ciclos) {
   _temDados = true;
   const badge = document.getElementById("status-badge");
   const text  = document.getElementById("status-text");
   if (badge) badge.className = "status-badge status-ok";
-  if (text)  text.textContent = `${fmtNum(total)} registros`;
+  if (text) {
+    text.textContent = ciclos?.length
+      ? `${ciclos.length} ciclo${ciclos.length > 1 ? "s" : ""} · ${fmtNum(total)} reg.`
+      : `${fmtNum(total)} registros`;
+  }
   document.getElementById("btn-limpar-planilha")?.classList.remove("hidden");
   lucide.createIcons();
 }

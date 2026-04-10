@@ -318,9 +318,7 @@ def processar():
 
         vendas = cruzar_vendas(vendas, indice_produtos, indice_iaf)
 
-        # Persistir produtos novos no DB automaticamente (sem marca ainda)
-        # Assim, na próxima importação já estão no catálogo e não precisam
-        # ser recadastrados — a marca atribuída pelo usuário também fica salva.
+        # Persistir produtos novos no DB automaticamente
         _persistir_produtos_novos(vendas)
 
         # Recarregar marcas: disco + GitHub (fonte permanente)
@@ -337,15 +335,28 @@ def processar():
 
         vendas = _aplicar_marcas_usuario(vendas)
 
-        _estado["vendas"] = vendas
+        # ── Mesclar com dados existentes (sem sobrescrever) ───────────────────
+        # Chave de deduplicação: CodigoPedido + CodigoProduto_normalizado
+        existentes = {
+            (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "")
+            for v in _estado["vendas"]
+        }
+        novas = [
+            v for v in vendas
+            if (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "") not in existentes
+        ]
+        _estado["vendas"] = _estado["vendas"] + novas
         _estado["arquivo_nome"] = nome_arquivo
         _estado["processado_em"] = datetime.now().isoformat()
         _salvar_estado()
 
+        ciclos = sorted({v.get("Ciclo") or "" for v in _estado["vendas"]} - {""})
         return jsonify({
             "ok": True,
-            "total_processado": len(vendas),
+            "total_processado": len(_estado["vendas"]),
+            "novos_registros": len(novas),
             "processado_em": _estado["processado_em"],
+            "ciclos": ciclos,
         })
     except Exception as e:
         import traceback
@@ -368,16 +379,35 @@ def limpar():
     return jsonify({"ok": True})
 
 
+@app.route("/api/limpar-ciclo", methods=["POST"])
+def limpar_ciclo():
+    """Remove as vendas de um ciclo específico sem apagar os demais."""
+    ciclo = (request.json or {}).get("ciclo", "")
+    if not ciclo:
+        return jsonify({"erro": "Ciclo não informado"}), 400
+    antes = len(_estado["vendas"])
+    _estado["vendas"] = [v for v in _estado["vendas"] if v.get("Ciclo") != ciclo]
+    removidos = antes - len(_estado["vendas"])
+    if not _estado["vendas"]:
+        _estado["arquivo_nome"] = None
+        _estado["processado_em"] = None
+    _salvar_estado()
+    ciclos = sorted({v.get("Ciclo") or "" for v in _estado["vendas"]} - {""})
+    return jsonify({"ok": True, "removidos": removidos, "total": len(_estado["vendas"]), "ciclos": ciclos})
+
+
 @app.route("/api/status")
 def status():
     """Retorna status atual do processamento."""
     _garantir_estado()
     vendas = _estado["vendas"]
+    ciclos = sorted({v.get("Ciclo") or "" for v in vendas} - {""})
     return jsonify({
         "tem_dados": len(vendas) > 0,
         "arquivo_nome": _estado["arquivo_nome"],
         "total_registros": len(vendas),
         "processado_em": _estado["processado_em"],
+        "ciclos": ciclos,
     })
 
 
