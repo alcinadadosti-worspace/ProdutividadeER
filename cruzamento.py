@@ -56,7 +56,7 @@ CATEGORIAS_KEYWORDS = [
         "BOLSA", "ESPNJ", "PORTA", "LENCO", "LUVA", "CASE", "CLIP",
     ]),
     ("Cuidados com a Pele", [
-        "INSTANCE CR", "CORPORAL", "MAOS", "CPO", "HID", "MAO",
+        "INSTANCE CR", "CORPORAL", "CREME", "CRÈME", "MAOS", "CPO", "CREM", "HID", "MAO",
     ]),
     ("Cuidados Faciais", [
         "NEO DERMO", "FACIAL", "SKINQ", "NEO D", "SKIN", "FAC",
