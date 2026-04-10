@@ -117,6 +117,36 @@ app.permanent_session_lifetime = timedelta(days=30)
 
 _sessoes = {}   # sid -> estado dict
 
+# ─── Cache de marcas do GitHub ────────────────────────────────────────────────
+# Evita uma chamada HTTP de 8s a cada nova sessão carregada.
+import time as _time_mod
+_marcas_gh_cache: dict = {}
+_marcas_gh_ts: float   = 0.0
+_MARCAS_GH_TTL         = 300  # segundos (5 min)
+_marcas_gh_lock        = threading.Lock()
+
+
+def _gh_ler_marcas_cached():
+    """Retorna marcas do GitHub usando cache em memória com TTL de 5 minutos."""
+    global _marcas_gh_cache, _marcas_gh_ts
+    agora = _time_mod.time()
+    with _marcas_gh_lock:
+        if agora - _marcas_gh_ts < _MARCAS_GH_TTL and _marcas_gh_cache:
+            return dict(_marcas_gh_cache)
+    # Busca fora do lock para não bloquear outras threads durante o HTTP
+    marcas = _gh_ler_marcas()
+    with _marcas_gh_lock:
+        _marcas_gh_cache = marcas
+        _marcas_gh_ts    = _time_mod.time()
+    return dict(marcas)
+
+
+def _gh_invalidar_cache():
+    """Invalida o cache de marcas para forçar releitura na próxima requisição."""
+    global _marcas_gh_ts
+    with _marcas_gh_lock:
+        _marcas_gh_ts = 0.0
+
 
 def _sid():
     """Retorna (ou cria) o ID de sessão do browser atual."""
@@ -146,7 +176,7 @@ def _estado_inicial():
 
 
 def _carregar_estado_sessao(sid, est):
-    """Carrega estado do disco para a sessão. Marcas do GitHub têm prioridade."""
+    """Carrega estado do disco para a sessão. Marcas do GitHub (cache) são mescladas."""
     sf = _state_file_sid(sid)
     if os.path.exists(sf):
         try:
@@ -157,14 +187,19 @@ def _carregar_estado_sessao(sid, est):
             est["processado_em"]  = data.get("processado_em")
             est["marcas_usuario"] = data.get("marcas_usuario", {})
             if est["vendas"]:
-                app.logger.info(f"[Sessão {sid[:8]}] {len(est['vendas'])} registros restaurados")
+                app.logger.info(f"[Sessão {sid[:8]}] {len(est['vendas'])} registros restaurados do disco")
         except Exception as e:
-            app.logger.warning(f"Erro ao carregar sessão: {e}")
+            app.logger.error(f"[Sessão {sid[:8]}] Erro ao carregar estado do disco: {e}")
+    else:
+        app.logger.info(f"[Sessão {sid[:8]}] Nova sessão — sem arquivo de estado")
 
-    # Marcas do GitHub são o catálogo global compartilhado entre sessões
-    marcas_gh = _gh_ler_marcas()
-    if marcas_gh:
-        est["marcas_usuario"].update(marcas_gh)
+    # Marcas do GitHub usam cache em memória (sem bloquear a request com HTTP)
+    try:
+        marcas_gh = _gh_ler_marcas_cached()
+        if marcas_gh:
+            est["marcas_usuario"].update(marcas_gh)
+    except Exception as e:
+        app.logger.warning(f"[Sessão {sid[:8]}] Erro ao carregar marcas do GitHub: {e}")
 
 
 @app.before_request
@@ -182,20 +217,24 @@ def _carregar_sessao():
 
 def _salvar_estado():
     """Persiste estado da sessão atual em disco."""
-    sid = session.get("sid", "")
-    if not sid:
+    try:
+        sid = _sid()   # garante que o sid sempre existe na sessão
+    except RuntimeError:
+        app.logger.error("[_salvar_estado] Sem contexto de request — não foi possível salvar")
         return
     est = g.est
+    sf  = _state_file_sid(sid)
     try:
-        with open(_state_file_sid(sid), "w", encoding="utf-8") as f:
+        with open(sf, "w", encoding="utf-8") as f:
             json.dump({
                 "vendas": est["vendas"],
                 "arquivo_nome": est["arquivo_nome"],
                 "processado_em": est["processado_em"],
                 "marcas_usuario": est["marcas_usuario"],
             }, f, ensure_ascii=False)
+        app.logger.info(f"[Sessão {sid[:8]}] Estado salvo: {len(est['vendas'])} registros → {sf}")
     except Exception as e:
-        app.logger.warning(f"Não foi possível salvar estado: {e}")
+        app.logger.error(f"[Sessão {sid[:8]}] FALHA ao salvar estado em {sf}: {e}")
 
 
 def _carregar_indices():
@@ -349,9 +388,9 @@ def processar():
         # Persistir produtos novos no DB automaticamente
         _persistir_produtos_novos(vendas)
 
-        # Marcas já estão em g.est["marcas_usuario"] (carregadas na sessão)
-        # Atualizar com eventuais novidades do GitHub
-        marcas_gh = _gh_ler_marcas()
+        # Marcas já estão em g.est["marcas_usuario"] (carregadas na sessão via cache)
+        # Atualizar com eventuais novidades do GitHub (usando cache — sem HTTP extra)
+        marcas_gh = _gh_ler_marcas_cached()
         if marcas_gh:
             g.est["marcas_usuario"].update(marcas_gh)
 
@@ -1140,6 +1179,9 @@ def cadastrar_produtos():
 
     # Salvar no GitHub (persistência permanente entre deploys)
     gh_ok, gh_erro = _gh_salvar_marcas(g.est["marcas_usuario"])
+    # Invalida cache para que outros workers/sessões vejam as novas marcas
+    if gh_ok:
+        _gh_invalidar_cache()
 
     # Aplicar marcas do usuário diretamente nas vendas em memória
     _aplicar_marcas_usuario(g.est["vendas"])
