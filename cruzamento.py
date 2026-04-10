@@ -34,7 +34,7 @@ CATEGORIAS_KEYWORDS = [
         "MASCARA CAPILAR", "MASC CAP", "LEAVE-IN", "LEAVE IN",
         "TRAT CAP", "CONDICIONADOR", "QUERATINA", "CAPILAR",
         "SHAMPOO", "SHAMPO", "CONDICION", "SIÀGE", "SIAGE",
-        "CACHOS", "MATCH", "AMACI", "SHAMP", "COND",
+        "CABELO", "CACHOS", "MATCH", "AMACI", "HAIR", "SHAMP", "COND",
     ]),
     ("Maquiagem", [
         "MASC CILIO", "BASE STICK", "BASE LIQ", "BLUSH LIQ", "BAT LIQ",
