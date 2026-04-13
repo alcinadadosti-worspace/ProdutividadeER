@@ -205,7 +205,7 @@ def _carregar_estado_sessao(sid, est):
 @app.before_request
 def _carregar_sessao():
     """Carrega estado da sessão em g.est antes de cada request."""
-    if request.endpoint in (None, "static"):
+    if request.endpoint in (None, "static", "ping"):
         return
     sid = _sid()
     if sid not in _sessoes:
@@ -335,6 +335,12 @@ def _safe_float(v):
 
 
 # ─── Rotas ────────────────────────────────────────────────────────────────────
+
+@app.route("/ping", methods=["GET", "HEAD"])
+def ping():
+    """Endpoint leve para monitoramento (UptimeRobot, etc.) — sem sessão."""
+    return "", 200
+
 
 @app.route("/")
 def index():
