@@ -114,6 +114,17 @@ async function renderIaf() {
           ${_tabelaTopProdutos(d.iaf_make.top_produtos)}
         </div>
       </div>
+
+      <!-- Penetração Make por Vendedor -->
+      <div class="section-title mb-12" style="margin-top:32px">Penetração Make por Vendedor</div>
+      <div class="table-card">
+        <div class="table-toolbar">
+          <span class="table-toolbar-title">Revendedoras que compraram Make ÷ Total revendedoras compradoras no ciclo</span>
+        </div>
+        <div class="table-wrapper">
+          ${_tabelaPenetracaoMake(d.penetracao_make_por_vendedor)}
+        </div>
+      </div>
     `;
 
     lucide.createIcons();
@@ -190,6 +201,45 @@ function _renderGraficosIaf(d) {
       }],
     }, barOptions(true, { plugins: { tooltip: { ...TOOLTIP_STYLE, callbacks: { label: ctx => " " + fmtBRL(ctx.raw) } } } }));
   }
+}
+
+function _tabelaPenetracaoMake(lista) {
+  if (!lista || !lista.length) {
+    return '<div class="empty-state" style="padding:24px"><p>Nenhum dado disponível.</p></div>';
+  }
+  const rows = lista.map(r => {
+    const pct = r.pct_penetracao.toFixed(1);
+    const barColor = r.pct_penetracao >= 50 ? "var(--accent-purple)" : r.pct_penetracao >= 25 ? "var(--accent-blue)" : "var(--text-muted)";
+    return `
+      <tr>
+        <td>${r.nome}</td>
+        <td class="mono" style="text-align:right">${fmtNum(r.rev_make)}</td>
+        <td class="mono" style="text-align:right">${fmtNum(r.rev_compradoras)}</td>
+        <td style="min-width:140px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="width:${Math.min(r.pct_penetracao,100)}%;height:100%;background:${barColor};border-radius:3px"></div>
+            </div>
+            <span class="mono" style="color:${barColor};font-weight:600;min-width:44px;text-align:right">${pct}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>Vendedor</th>
+          <th style="text-align:right">Rev. c/ Make</th>
+          <th style="text-align:right">Total Compradoras</th>
+          <th>Penetração Make</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 function _tabelaTopProdutos(lista) {
