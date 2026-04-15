@@ -115,6 +115,17 @@ async function renderIaf() {
         </div>
       </div>
 
+      <!-- Penetração Cabelos por Vendedor -->
+      <div class="section-title mb-12" style="margin-top:32px">Penetração Cabelos por Vendedor</div>
+      <div class="table-card">
+        <div class="table-toolbar">
+          <span class="table-toolbar-title">Revendedoras que compraram Cabelos ÷ Total revendedoras compradoras no ciclo</span>
+        </div>
+        <div class="table-wrapper">
+          ${_tabelaPenetracao(d.penetracao_cabelos_por_vendedor, "cabelos")}
+        </div>
+      </div>
+
       <!-- Penetração Make por Vendedor -->
       <div class="section-title mb-12" style="margin-top:32px">Penetração Make por Vendedor</div>
       <div class="table-card">
@@ -122,7 +133,7 @@ async function renderIaf() {
           <span class="table-toolbar-title">Revendedoras que compraram Make ÷ Total revendedoras compradoras no ciclo</span>
         </div>
         <div class="table-wrapper">
-          ${_tabelaPenetracaoMake(d.penetracao_make_por_vendedor)}
+          ${_tabelaPenetracao(d.penetracao_make_por_vendedor, "make")}
         </div>
       </div>
     `;
@@ -203,17 +214,22 @@ function _renderGraficosIaf(d) {
   }
 }
 
-function _tabelaPenetracaoMake(lista) {
+function _tabelaPenetracao(lista, tipo) {
   if (!lista || !lista.length) {
     return '<div class="empty-state" style="padding:24px"><p>Nenhum dado disponível.</p></div>';
   }
+  const isMake = tipo === "make";
+  const accentColor = isMake ? "var(--accent-purple)" : "var(--accent-blue)";
+  const midColor    = isMake ? "var(--accent-blue)"   : "rgba(108,158,255,0.6)";
+  const colLabel    = isMake ? "Rev. c/ Make"          : "Rev. c/ Cabelos";
+
   const rows = lista.map(r => {
     const pct = r.pct_penetracao.toFixed(1);
-    const barColor = r.pct_penetracao >= 50 ? "var(--accent-purple)" : r.pct_penetracao >= 25 ? "var(--accent-blue)" : "var(--text-muted)";
+    const barColor = r.pct_penetracao >= 50 ? accentColor : r.pct_penetracao >= 25 ? midColor : "var(--text-muted)";
     return `
       <tr>
         <td>${r.nome}</td>
-        <td class="mono" style="text-align:right">${fmtNum(r.rev_make)}</td>
+        <td class="mono" style="text-align:right">${fmtNum(r.rev_iaf)}</td>
         <td class="mono" style="text-align:right">${fmtNum(r.rev_compradoras)}</td>
         <td style="min-width:140px">
           <div style="display:flex;align-items:center;gap:8px">
@@ -232,9 +248,9 @@ function _tabelaPenetracaoMake(lista) {
       <thead>
         <tr>
           <th>Vendedor</th>
-          <th style="text-align:right">Rev. c/ Make</th>
+          <th style="text-align:right">${colLabel}</th>
           <th style="text-align:right">Total Compradoras</th>
-          <th>Penetração Make</th>
+          <th>Penetração</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>

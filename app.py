@@ -1070,16 +1070,20 @@ def iaf():
     for v in vendas:
         metodos[v.get("metodo_match", "nenhum")] += 1
 
-    # Penetração Make por vendedor:
-    # revendedoras que compraram make / total revendedoras compradoras no ciclo
-    _vend_rev_total = defaultdict(set)   # vendedor -> set de revendedoras compradoras
-    _vend_rev_make  = defaultdict(set)   # vendedor -> set de revendedoras que compraram make
+    # Penetração Make e Cabelos por vendedor:
+    # revendedoras que compraram make (ou cabelos) / total revendedoras compradoras no ciclo
+    _vend_rev_total   = defaultdict(set)
+    _vend_rev_make    = defaultdict(set)
+    _vend_rev_cabelos = defaultdict(set)
     for v in vendas:
         cod_vend = v.get("CodigoVendedor") or "?"
         cod_rev  = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
         _vend_rev_total[cod_vend].add(cod_rev)
-        if v.get("classificacao_iaf") == "IAF Make":
+        clf = v.get("classificacao_iaf")
+        if clf == "IAF Make":
             _vend_rev_make[cod_vend].add(cod_rev)
+        elif clf == "IAF Cabelos":
+            _vend_rev_cabelos[cod_vend].add(cod_rev)
 
     _vend_nomes = {}
     for v in vendas:
@@ -1087,18 +1091,25 @@ def iaf():
         if cod_vend not in _vend_nomes:
             _vend_nomes[cod_vend] = v.get("Vendedor") or cod_vend
 
-    penetracao_make = []
+    penetracao_make    = []
+    penetracao_cabelos = []
     for cod_vend, rev_total in _vend_rev_total.items():
-        total = len(rev_total)
-        make  = len(_vend_rev_make.get(cod_vend, set()))
+        total   = len(rev_total)
+        make    = len(_vend_rev_make.get(cod_vend, set()))
+        cabelos = len(_vend_rev_cabelos.get(cod_vend, set()))
+        nome    = _vend_nomes.get(cod_vend, cod_vend)
         penetracao_make.append({
-            "codigo": cod_vend,
-            "nome": _vend_nomes.get(cod_vend, cod_vend),
-            "rev_compradoras": total,
-            "rev_make": make,
+            "codigo": cod_vend, "nome": nome,
+            "rev_compradoras": total, "rev_iaf": make,
             "pct_penetracao": (make / total * 100) if total else 0,
         })
+        penetracao_cabelos.append({
+            "codigo": cod_vend, "nome": nome,
+            "rev_compradoras": total, "rev_iaf": cabelos,
+            "pct_penetracao": (cabelos / total * 100) if total else 0,
+        })
     penetracao_make.sort(key=lambda x: x["pct_penetracao"], reverse=True)
+    penetracao_cabelos.sort(key=lambda x: x["pct_penetracao"], reverse=True)
 
     return jsonify({
         "total_geral": total_geral,
@@ -1107,6 +1118,7 @@ def iaf():
         "geral": _resumo_iaf("Geral"),
         "metodos_match": dict(metodos),
         "penetracao_make_por_vendedor": penetracao_make,
+        "penetracao_cabelos_por_vendedor": penetracao_cabelos,
     })
 
 
