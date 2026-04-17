@@ -20,7 +20,12 @@ async function renderComparativo() {
   `;
 
   try {
-    const res = await fetch("/api/comparativo");
+    // Envia todos os filtros globais exceto ciclo (ciclo é controlado pela própria UI)
+    const filtros = Object.fromEntries(
+      Object.entries(window.APP_FILTROS || {}).filter(([k]) => k !== "ciclo")
+    );
+    const params = new URLSearchParams(filtros);
+    const res = await fetch("/api/comparativo?" + params.toString());
     const data = await res.json();
     if (!res.ok) throw new Error(data.erro || "Erro");
     _compData = data;

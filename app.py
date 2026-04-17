@@ -639,7 +639,9 @@ def _dashboard_vazio():
 def comparativo():
     """Comparativo de faturamento entre ciclos por vendedor e por categoria."""
 
-    vendas = g.est["vendas"]
+    # Aplica filtros exceto ciclo (ciclo é controlado pela própria UI do comparativo)
+    args_sem_ciclo = {k: v for k, v in request.args.items() if k != "ciclo"}
+    vendas = _aplicar_filtros(g.est["vendas"], args_sem_ciclo)
     if not vendas:
         return jsonify({"ciclos": [], "por_vendedor": [], "por_categoria": []})
 
