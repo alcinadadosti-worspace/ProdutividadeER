@@ -725,7 +725,6 @@ def vendedores():
             "pct_iaf_cabelos": (m["iaf_cabelos"] / total * 100) if total else 0,
             "pct_iaf_make": (m["iaf_make"] / total * 100) if total else 0,
             "pct_geral": (m["geral"] / total * 100) if total else 0,
-            "pct_marcas": (sum(m["marcas"].values()) / total * 100) if total else 0,
             "qtd_marcas": len(marcas_ord),
             "top_marca": marcas_ord[0][0] if marcas_ord else "—",
         })

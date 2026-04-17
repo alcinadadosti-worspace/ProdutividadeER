@@ -37,12 +37,11 @@ async function renderVendedores() {
     _renderTabelaVendedores(_vendData);
 
     document.getElementById("vend-export").addEventListener("click", () => {
-      const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make","% Marcas"];
+      const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make"];
       const rows = _vendData.map(v => [
         v.nome, v.codigo, v.total_faturado.toFixed(2), v.qtd_pedidos,
         v.ticket_medio.toFixed(2), v.quantidade, v.qtd_marcas ?? "",
-        v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1),
-        (v.pct_marcas ?? 0).toFixed(1)
+        v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1)
       ]);
       _downloadCSV([header, ...rows], "vendedores.csv");
     });
@@ -80,7 +79,6 @@ function _renderTabelaVendedores(lista) {
     { key: "top_marca",      label: "Marca Principal",align: "left" },
     { key: "pct_iaf_cabelos",label: "% Cabelos",      align: "right" },
     { key: "pct_iaf_make",   label: "% Make",         align: "right" },
-    { key: "pct_marcas",     label: "% Marcas",       align: "right" },
   ];
 
   const sorted = [...lista].sort((a, b) => {
@@ -112,9 +110,6 @@ function _renderTabelaVendedores(lista) {
       </td>
       <td style="text-align:right">
         <span class="badge badge-make">${v.pct_iaf_make.toFixed(1)}%</span>
-      </td>
-      <td style="text-align:right">
-        <span class="badge" style="background:rgba(251,146,60,0.15);color:#FB923C">${(v.pct_marcas ?? 0).toFixed(1)}%</span>
       </td>
     </tr>
   `).join("");
@@ -180,11 +175,8 @@ async function abrirDrawerVendedor(codigo) {
       </div>
 
       <!-- Marcas -->
-      ${d.por_marca?.length ? (() => {
-          const totalMarcas = d.por_marca.reduce((s, x) => s + x.total, 0);
-          const pctMarcasGeral = d.total_faturado ? (totalMarcas / d.total_faturado * 100) : 0;
-          return `
-      <div class="section-title" style="margin-bottom:12px">Marcas Vendidas <span style="font-size:12px;font-weight:400;color:#FB923C;margin-left:8px">${pctMarcasGeral.toFixed(1)}% do faturamento</span></div>
+      ${d.por_marca?.length ? `
+      <div class="section-title" style="margin-bottom:12px">Marcas Vendidas</div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:24px">
         ${d.por_marca.map(x => {
           const pct = d.total_faturado ? (x.total / d.total_faturado * 100) : 0;
@@ -199,8 +191,7 @@ async function abrirDrawerVendedor(codigo) {
             <div style="font-size:11px;color:var(--text-tertiary);width:36px;text-align:right">${pct.toFixed(0)}%</div>
           </div>`;
         }).join("")}
-      </div>`;
-      })() : ""}
+      </div>` : ""}
 
       <!-- Marcas mais vendidas juntas -->
       ${d.marcas_juntas?.length ? `
