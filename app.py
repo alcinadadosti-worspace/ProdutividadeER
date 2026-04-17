@@ -710,11 +710,25 @@ def vendedores():
         if marca:
             m["marcas"][marca] += total
 
+    # Retenção: calculada de TODOS os dados (sem filtro), pois é indicador histórico
+    ret_dados = defaultdict(lambda: defaultdict(set))  # vend_cod -> rev_cod -> set(ciclos)
+    for v in g.est["vendas"]:
+        cod_vend = v.get("CodigoVendedor") or "?"
+        cod_rev = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
+        ciclo = v.get("Ciclo") or ""
+        if ciclo:
+            ret_dados[cod_vend][cod_rev].add(ciclo)
+
+    total_ciclos = len({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
+
     resultado = []
     for cod, m in metricas.items():
         total = m["total"]
         pedidos = len(m["pedidos"])
         marcas_ord = sorted(m["marcas"].items(), key=lambda x: x[1], reverse=True)
+        rev_ciclos = ret_dados.get(cod, {})
+        qtd_revendedores = len(rev_ciclos)
+        qtd_retidos = sum(1 for cs in rev_ciclos.values() if len(cs) > 1)
         resultado.append({
             "codigo": cod,
             "nome": m["nome"],
@@ -727,10 +741,13 @@ def vendedores():
             "pct_geral": (m["geral"] / total * 100) if total else 0,
             "qtd_marcas": len(marcas_ord),
             "top_marca": marcas_ord[0][0] if marcas_ord else "—",
+            "qtd_revendedores": qtd_revendedores,
+            "qtd_retidos": qtd_retidos,
+            "pct_retencao": (qtd_retidos / qtd_revendedores * 100) if qtd_revendedores else 0,
         })
 
     resultado.sort(key=lambda x: x["total_faturado"], reverse=True)
-    return jsonify({"vendedores": resultado, "total": len(resultado)})
+    return jsonify({"vendedores": resultado, "total": len(resultado), "total_ciclos": total_ciclos})
 
 
 @app.route("/api/vendedor/<path:codigo>")
@@ -765,6 +782,38 @@ def vendedor_detalhe(codigo):
     por_ciclo = defaultdict(float)
     for v in vendas_vendedor:
         por_ciclo[v.get("Ciclo") or "Sem Ciclo"] += _safe_float(v["TotalPraticado"])
+
+    # Retenção por ciclo
+    rev_por_ciclo = defaultdict(set)
+    for v in vendas_vendedor:
+        ciclo = v.get("Ciclo") or ""
+        if ciclo:
+            cod_rev = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
+            rev_por_ciclo[ciclo].add(cod_rev)
+
+    ciclos_ord = sorted(rev_por_ciclo.keys())
+    retencao_por_ciclo = []
+    vistos_antes = set()
+    for ciclo in ciclos_ord:
+        revs = rev_por_ciclo[ciclo]
+        retidos = revs & vistos_antes
+        novos = revs - vistos_antes
+        retencao_por_ciclo.append({
+            "ciclo": ciclo,
+            "total": len(revs),
+            "novos": len(novos),
+            "retidos": len(retidos),
+            "pct_retencao": round(len(retidos) / len(revs) * 100, 1) if revs else 0,
+        })
+        vistos_antes.update(revs)
+
+    todos_revs = {v.get("CodigoRevendedor") or v.get("Revendedor") or "?" for v in vendas_vendedor}
+    rev_ciclos_count = defaultdict(set)
+    for v in vendas_vendedor:
+        ciclo = v.get("Ciclo") or ""
+        if ciclo:
+            rev_ciclos_count[v.get("CodigoRevendedor") or v.get("Revendedor") or "?"].add(ciclo)
+    qtd_retidos_total = sum(1 for cs in rev_ciclos_count.values() if len(cs) > 1)
 
     # Por marca
     por_marca = defaultdict(float)
@@ -823,6 +872,12 @@ def vendedor_detalhe(codigo):
         "marcas_juntas": marcas_juntas,
         "por_categoria": [{"categoria": k, "total": v} for k, v in sorted(por_categoria.items(), key=lambda x: x[1], reverse=True)],
         "produtos_por_categoria": produtos_por_categoria,
+        "retencao": {
+            "qtd_revendedores": len(todos_revs),
+            "qtd_retidos": qtd_retidos_total,
+            "pct_retencao": round(qtd_retidos_total / len(todos_revs) * 100, 1) if todos_revs else 0,
+            "por_ciclo": retencao_por_ciclo,
+        },
     })
 
 

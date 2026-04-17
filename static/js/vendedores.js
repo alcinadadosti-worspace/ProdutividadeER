@@ -4,6 +4,7 @@
 
 let _vendSort = { col: "total_faturado", asc: false };
 let _vendData = [];
+let _vendCiclos = 0;
 
 async function renderVendedores() {
   const page = document.getElementById("page-vendedores");
@@ -33,16 +34,22 @@ async function renderVendedores() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.erro || "Erro");
     _vendData = data.vendedores;
+    _vendCiclos = data.total_ciclos ?? 0;
     document.getElementById("vend-count").textContent = `${fmtNum(data.total)} vendedores`;
     _renderTabelaVendedores(_vendData);
 
     document.getElementById("vend-export").addEventListener("click", () => {
       const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make"];
-      const rows = _vendData.map(v => [
-        v.nome, v.codigo, v.total_faturado.toFixed(2), v.qtd_pedidos,
-        v.ticket_medio.toFixed(2), v.quantidade, v.qtd_marcas ?? "",
-        v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1)
-      ]);
+      if (_vendCiclos >= 2) header.push("Revendedores","Retidos","% Retenção");
+      const rows = _vendData.map(v => {
+        const row = [
+          v.nome, v.codigo, v.total_faturado.toFixed(2), v.qtd_pedidos,
+          v.ticket_medio.toFixed(2), v.quantidade, v.qtd_marcas ?? "",
+          v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1),
+        ];
+        if (_vendCiclos >= 2) row.push(v.qtd_revendedores ?? 0, v.qtd_retidos ?? 0, (v.pct_retencao ?? 0).toFixed(1));
+        return row;
+      });
       _downloadCSV([header, ...rows], "vendedores.csv");
     });
 
@@ -79,6 +86,7 @@ function _renderTabelaVendedores(lista) {
     { key: "top_marca",      label: "Marca Principal",align: "left" },
     { key: "pct_iaf_cabelos",label: "% Cabelos",      align: "right" },
     { key: "pct_iaf_make",   label: "% Make",         align: "right" },
+    ...(_vendCiclos >= 2 ? [{ key: "pct_retencao", label: "Retenção", align: "right" }] : []),
   ];
 
   const sorted = [...lista].sort((a, b) => {
@@ -111,6 +119,7 @@ function _renderTabelaVendedores(lista) {
       <td style="text-align:right">
         <span class="badge badge-make">${v.pct_iaf_make.toFixed(1)}%</span>
       </td>
+      ${_vendCiclos >= 2 ? `<td style="text-align:right">${_badgeRetencao(v.pct_retencao ?? 0, v.qtd_retidos ?? 0, v.qtd_revendedores ?? 0)}</td>` : ""}
     </tr>
   `).join("");
 
@@ -173,6 +182,46 @@ async function abrirDrawerVendedor(codigo) {
           </div>
         `).join("")}
       </div>
+
+      <!-- Retenção -->
+      ${d.retencao && d.retencao.por_ciclo.length >= 2 ? `
+      <div class="section-title" style="margin-bottom:12px">Retenção de Revendedores</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+        <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">Total</div>
+          <div style="font-size:18px;font-weight:700;font-family:monospace">${fmtNum(d.retencao.qtd_revendedores)}</div>
+        </div>
+        <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">Retidos</div>
+          <div style="font-size:18px;font-weight:700;font-family:monospace;color:#4ADE80">${fmtNum(d.retencao.qtd_retidos)}</div>
+        </div>
+        <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">Taxa</div>
+          <div style="font-size:18px;font-weight:700;font-family:monospace;color:${d.retencao.pct_retencao >= 50 ? "#4ADE80" : d.retencao.pct_retencao >= 20 ? "#FCD34D" : "#F87171"}">${d.retencao.pct_retencao.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-bottom:24px">
+        <table>
+          <thead><tr>
+            <th>Ciclo</th>
+            <th style="text-align:right">Total</th>
+            <th style="text-align:right;color:#4ADE80">Retidos</th>
+            <th style="text-align:right;color:var(--accent-blue)">Novos</th>
+            <th style="text-align:right">% Retenção</th>
+          </tr></thead>
+          <tbody>
+            ${d.retencao.por_ciclo.map(c => `
+              <tr>
+                <td class="mono secondary" style="font-size:12px">${c.ciclo}</td>
+                <td class="mono" style="text-align:right;font-size:12px">${fmtNum(c.total)}</td>
+                <td class="mono" style="text-align:right;font-size:12px;color:#4ADE80">${fmtNum(c.retidos)}</td>
+                <td class="mono" style="text-align:right;font-size:12px;color:var(--accent-blue)">${fmtNum(c.novos)}</td>
+                <td style="text-align:right;font-size:12px">${c.pct_retencao > 0 ? _badgeRetencao(c.pct_retencao, c.retidos, c.total) : '<span style="color:var(--text-tertiary);font-size:11px">1º ciclo</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>` : ""}
 
       <!-- Marcas -->
       ${d.por_marca?.length ? `
@@ -335,6 +384,12 @@ const _MARCA_CORES = [
   { match: /o\.u\.i|oui\b/i,       cor: "#F87171", bg: "rgba(248,113,113,0.15)" },   // vermelho
   { match: /aumigos|auamigos/i,    cor: "#FB923C", bg: "rgba(251,146,60,0.15)"  },   // laranja
 ];
+
+function _badgeRetencao(pct, retidos, total) {
+  const cor = pct >= 50 ? "#4ADE80" : pct >= 20 ? "#FCD34D" : "#F87171";
+  const bg  = pct >= 50 ? "rgba(74,222,128,0.15)" : pct >= 20 ? "rgba(252,211,77,0.15)" : "rgba(248,113,113,0.15)";
+  return `<span class="badge" style="background:${bg};color:${cor}" title="${retidos} de ${total} revendedores">${pct.toFixed(1)}%</span>`;
+}
 
 function _corMarca(nome) {
   const n = nome || "";
