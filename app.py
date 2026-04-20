@@ -689,6 +689,7 @@ def vendedores():
         "total": 0.0, "pedidos": set(), "quantidade": 0,
         "iaf_cabelos": 0.0, "iaf_make": 0.0, "geral": 0.0,
         "marcas": defaultdict(float),
+        "pedidos_marcas": defaultdict(set),
     })
 
     for v in vendas:
@@ -698,8 +699,9 @@ def vendedores():
         m["codigo"] = cod
         total = _safe_float(v["TotalPraticado"])
         m["total"] += total
-        if v.get("CodigoPedido"):
-            m["pedidos"].add(v["CodigoPedido"])
+        ped = v.get("CodigoPedido")
+        if ped:
+            m["pedidos"].add(ped)
         m["quantidade"] += v.get("Quantidade", 0)
         clf = v.get("classificacao_iaf", "Geral")
         if clf == "IAF Cabelos":
@@ -711,6 +713,8 @@ def vendedores():
         marca = v.get("marca") or ""
         if marca:
             m["marcas"][marca] += total
+        if ped and marca:
+            m["pedidos_marcas"][ped].add(marca)
 
     # Retenção: calculada de TODOS os dados (sem filtro), pois é indicador histórico
     ret_dados = defaultdict(lambda: defaultdict(set))  # vend_cod -> rev_cod -> set(ciclos)
@@ -731,6 +735,13 @@ def vendedores():
         rev_ciclos = ret_dados.get(cod, {})
         qtd_revendedores = len(rev_ciclos)
         qtd_retidos = sum(1 for cs in rev_ciclos.values() if len(cs) > 1)
+
+        # Pedidos multi/monomarca (apenas pedidos com pelo menos 1 marca identificada)
+        pedidos_com_marca = {ped: marcas for ped, marcas in m["pedidos_marcas"].items() if marcas}
+        qtd_multimarca = sum(1 for marcas in pedidos_com_marca.values() if len(marcas) >= 2)
+        qtd_monomarca  = sum(1 for marcas in pedidos_com_marca.values() if len(marcas) == 1)
+        base_marca = len(pedidos_com_marca)
+
         resultado.append({
             "codigo": cod,
             "nome": m["nome"],
@@ -746,6 +757,10 @@ def vendedores():
             "qtd_revendedores": qtd_revendedores,
             "qtd_retidos": qtd_retidos,
             "pct_retencao": (qtd_retidos / qtd_revendedores * 100) if qtd_revendedores else 0,
+            "qtd_pedidos_multimarca": qtd_multimarca,
+            "qtd_pedidos_monomarca": qtd_monomarca,
+            "pct_pedidos_multimarca": (qtd_multimarca / base_marca * 100) if base_marca else 0,
+            "pct_pedidos_monomarca": (qtd_monomarca / base_marca * 100) if base_marca else 0,
         })
 
     resultado.sort(key=lambda x: x["total_faturado"], reverse=True)

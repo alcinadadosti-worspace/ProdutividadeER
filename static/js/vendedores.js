@@ -39,13 +39,14 @@ async function renderVendedores() {
     _renderTabelaVendedores(_vendData);
 
     document.getElementById("vend-export").addEventListener("click", () => {
-      const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make"];
+      const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make","% Multimarca","% Monomarca"];
       if (_vendCiclos >= 2) header.push("Revendedores","Retidos","% Retenção");
       const rows = _vendData.map(v => {
         const row = [
           v.nome, v.codigo, v.total_faturado.toFixed(2), v.qtd_pedidos,
           v.ticket_medio.toFixed(2), v.quantidade, v.qtd_marcas ?? "",
           v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1),
+          (v.pct_pedidos_multimarca ?? 0).toFixed(1), (v.pct_pedidos_monomarca ?? 0).toFixed(1),
         ];
         if (_vendCiclos >= 2) row.push(v.qtd_revendedores ?? 0, v.qtd_retidos ?? 0, (v.pct_retencao ?? 0).toFixed(1));
         return row;
@@ -84,8 +85,10 @@ function _renderTabelaVendedores(lista) {
     { key: "quantidade",     label: "Itens",          align: "right" },
     { key: "qtd_marcas",     label: "Marcas",         align: "right" },
     { key: "top_marca",      label: "Marca Principal",align: "left" },
-    { key: "pct_iaf_cabelos",label: "% Cabelos",      align: "right" },
-    { key: "pct_iaf_make",   label: "% Make",         align: "right" },
+    { key: "pct_iaf_cabelos",        label: "% Cabelos",    align: "right" },
+    { key: "pct_iaf_make",          label: "% Make",       align: "right" },
+    { key: "pct_pedidos_multimarca", label: "% Multimarca", align: "right" },
+    { key: "pct_pedidos_monomarca",  label: "% Monomarca",  align: "right" },
     ...(_vendCiclos >= 2 ? [{ key: "pct_retencao", label: "Retenção", align: "right" }] : []),
   ];
 
@@ -119,6 +122,8 @@ function _renderTabelaVendedores(lista) {
       <td style="text-align:right">
         <span class="badge badge-make">${v.pct_iaf_make.toFixed(1)}%</span>
       </td>
+      <td style="text-align:right">${_badgeMarca(v.pct_pedidos_multimarca ?? 0, v.qtd_pedidos_multimarca ?? 0)}</td>
+      <td style="text-align:right">${_badgeMarca(v.pct_pedidos_monomarca ?? 0, v.qtd_pedidos_monomarca ?? 0)}</td>
       ${_vendCiclos >= 2 ? `<td style="text-align:right">${_badgeRetencao(v.pct_retencao ?? 0, v.qtd_retidos ?? 0, v.qtd_revendedores ?? 0)}</td>` : ""}
     </tr>
   `).join("");
@@ -384,6 +389,12 @@ const _MARCA_CORES = [
   { match: /o\.u\.i|oui\b/i,       cor: "#F87171", bg: "rgba(248,113,113,0.15)" },   // vermelho
   { match: /aumigos|auamigos/i,    cor: "#FB923C", bg: "rgba(251,146,60,0.15)"  },   // laranja
 ];
+
+function _badgeMarca(pct, qtd) {
+  const cor = pct >= 50 ? "#4ADE80" : pct >= 20 ? "#FCD34D" : "#94A3B8";
+  const bg  = pct >= 50 ? "rgba(74,222,128,0.15)" : pct >= 20 ? "rgba(252,211,77,0.15)" : "rgba(148,163,184,0.1)";
+  return `<span class="badge" style="background:${bg};color:${cor}" title="${qtd} pedido${qtd !== 1 ? "s" : ""}">${pct.toFixed(1)}%</span>`;
+}
 
 function _badgeRetencao(pct, retidos, total) {
   const cor = pct >= 50 ? "#4ADE80" : pct >= 20 ? "#FCD34D" : "#F87171";
