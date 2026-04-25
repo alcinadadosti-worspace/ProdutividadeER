@@ -16,6 +16,16 @@ from collections import defaultdict
 import secrets as _secrets_mod
 from datetime import datetime, timedelta
 
+# Carrega variáveis do .env se existir (sem dependência externa)
+_env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_env_path):
+    with open(_env_path, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 from flask import Flask, request, jsonify, send_file, render_template, session, g
 
 from processador import ler_planilha, preview_planilha, normalizar_sku
@@ -1192,6 +1202,137 @@ def iaf():
         "penetracao_make_por_vendedor": penetracao_make,
         "penetracao_cabelos_por_vendedor": penetracao_cabelos,
     })
+
+
+@app.route("/api/metas")
+def metas():
+    """Metas por vendedor: % multimarca, IAF Cabelos (penetração), IAF Make (penetração)."""
+
+    vendas = _aplicar_filtros(g.est["vendas"], request.args)
+
+    METAS = {"multimarca": 72.0, "iaf_cabelos": 37.0, "iaf_make": 38.0}
+
+    metricas = defaultdict(lambda: {
+        "nome": "", "codigo": "",
+        "pedidos_marcas": defaultdict(set),
+        "rev_total": set(),
+        "rev_cabelos": set(),
+        "rev_make": set(),
+    })
+
+    for v in vendas:
+        cod = v.get("CodigoVendedor") or "?"
+        m = metricas[cod]
+        m["nome"] = v.get("Vendedor") or cod
+        m["codigo"] = cod
+        ped = v.get("CodigoPedido")
+        marca = v.get("marca") or ""
+        if ped and marca:
+            m["pedidos_marcas"][ped].add(marca)
+        cod_rev = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
+        m["rev_total"].add(cod_rev)
+        clf = v.get("classificacao_iaf")
+        if clf == "IAF Cabelos":
+            m["rev_cabelos"].add(cod_rev)
+        elif clf == "IAF Make":
+            m["rev_make"].add(cod_rev)
+
+    resultado = []
+    for cod, m in metricas.items():
+        pedidos_com_marca = {ped: marcas for ped, marcas in m["pedidos_marcas"].items() if marcas}
+        qtd_multimarca = sum(1 for marcas in pedidos_com_marca.values() if len(marcas) >= 2)
+        base_marca = len(pedidos_com_marca)
+        pct_multimarca = (qtd_multimarca / base_marca * 100) if base_marca else 0
+
+        rev_total = len(m["rev_total"])
+        pct_cabelos = (len(m["rev_cabelos"]) / rev_total * 100) if rev_total else 0
+        pct_make = (len(m["rev_make"]) / rev_total * 100) if rev_total else 0
+
+        resultado.append({
+            "codigo": cod,
+            "nome": m["nome"],
+            "pct_multimarca": round(pct_multimarca, 1),
+            "pct_iaf_cabelos": round(pct_cabelos, 1),
+            "pct_iaf_make": round(pct_make, 1),
+            "atingiu_multimarca": pct_multimarca >= METAS["multimarca"],
+            "atingiu_cabelos": pct_cabelos >= METAS["iaf_cabelos"],
+            "atingiu_make": pct_make >= METAS["iaf_make"],
+        })
+
+    resultado.sort(key=lambda x: x["nome"])
+    return jsonify({"vendedores": resultado, "metas": METAS})
+
+
+@app.route("/api/slack/enviar", methods=["POST"])
+def slack_enviar():
+    """Envia metas de um vendedor via DM no Slack."""
+    token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not token:
+        return jsonify({"erro": "SLACK_BOT_TOKEN não configurado no servidor"}), 500
+
+    body = request.json or {}
+    slack_user_id  = body.get("slack_user_id", "")
+    vendedor_nome  = body.get("vendedor_nome", "Vendedor")
+    pct_mult       = float(body.get("pct_multimarca", 0))
+    pct_cab        = float(body.get("pct_iaf_cabelos", 0))
+    pct_make       = float(body.get("pct_iaf_make", 0))
+    meta_mult      = float(body.get("meta_multimarca", 72))
+    meta_cab       = float(body.get("meta_iaf_cabelos", 37))
+    meta_make      = float(body.get("meta_iaf_make", 38))
+    ok_mult        = pct_mult  >= meta_mult
+    ok_cab         = pct_cab   >= meta_cab
+    ok_make        = pct_make  >= meta_make
+    cnt            = sum([ok_mult, ok_cab, ok_make])
+
+    def _linha(emoji, label, valor, meta, ok):
+        sinal = "✅" if ok else "❌"
+        return f"{sinal} {emoji} *{label}:* `{valor:.1f}%` _(meta: {meta:.0f}%)_"
+
+    texto_fallback = f"Metas de {vendedor_nome}: Multimarca {pct_mult:.1f}% | IAF Cabelos {pct_cab:.1f}% | IAF Make {pct_make:.1f}%"
+
+    payload = {
+        "channel": slack_user_id,
+        "text": texto_fallback,
+        "blocks": [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": f"📊 Metas — {vendedor_nome}", "emoji": True},
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        _linha("🛍️", "Multimarca", pct_mult, meta_mult, ok_mult) + "\n"
+                        + _linha("💇", "IAF Cabelos", pct_cab, meta_cab, ok_cab) + "\n"
+                        + _linha("💄", "IAF Make", pct_make, meta_make, ok_make)
+                    ),
+                },
+            },
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": f"Metas atingidas: *{cnt} de 3*"}],
+            },
+        ],
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=data,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resultado = json.loads(resp.read())
+    except urllib.error.URLError as e:
+        return jsonify({"erro": str(e)}), 502
+
+    if not resultado.get("ok"):
+        return jsonify({"erro": resultado.get("error", "Slack retornou erro")}), 400
+
+    return jsonify({"ok": True})
 
 
 @app.route("/api/filtros")

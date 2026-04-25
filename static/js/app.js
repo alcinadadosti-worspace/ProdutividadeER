@@ -20,6 +20,7 @@ const PAGINAS = {
   comparativo:   { render: renderComparativo,   semDados: false },
   produtos:      { render: renderProdutos,      semDados: false },
   iaf:           { render: renderIaf,           semDados: false },
+  metas:         { render: renderMetas,         semDados: false },
   dados:         { render: renderDados,         semDados: false },
 };
 
