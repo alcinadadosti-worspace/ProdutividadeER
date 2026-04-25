@@ -1260,7 +1260,14 @@ def metas():
         })
 
     resultado.sort(key=lambda x: x["nome"])
-    return jsonify({"vendedores": resultado, "metas": METAS})
+    ciclos_no_filtro = sorted({v.get("Ciclo") or "" for v in vendas} - {""})
+    todos_ciclos     = sorted({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
+    return jsonify({
+        "vendedores": resultado,
+        "metas": METAS,
+        "qtd_ciclos_total": len(todos_ciclos),
+        "ciclo_filtrado": request.args.get("ciclo", ""),
+    })
 
 
 @app.route("/api/slack/enviar", methods=["POST"])

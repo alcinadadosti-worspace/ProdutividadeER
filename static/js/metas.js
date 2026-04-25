@@ -43,11 +43,20 @@ function _renderMetasPage(d) {
   const qtdCab    = vendedores.filter(v => v.atingiu_cabelos).length;
   const qtdMake   = vendedores.filter(v => v.atingiu_make).length;
 
+  const alertaCiclo = (d.qtd_ciclos_total > 1 && !d.ciclo_filtrado) ? `
+    <div class="metas-alerta">
+      <i data-lucide="triangle-alert" style="width:15px;height:15px;flex-shrink:0"></i>
+      <span><strong>${d.qtd_ciclos_total} ciclos</strong> importados sem filtro de ciclo ativo — os números abaixo agregam todos os ciclos. Selecione um ciclo na barra de filtros para ver a meta de um período específico.</span>
+    </div>
+  ` : "";
+
   page.innerHTML = `
     <div class="page-header">
       <div class="page-title">Metas por Vendedor</div>
       <div class="page-subtitle">% Multimarca · IAF Cabelos · IAF Make</div>
     </div>
+
+    ${alertaCiclo}
 
     <!-- Cards de resumo -->
     <div class="metas-summary-grid">
@@ -61,10 +70,14 @@ function _renderMetasPage(d) {
       <div class="table-toolbar">
         <span class="table-toolbar-title" id="metas-count">${fmtNum(totalVend)} vendedores</span>
         <div class="table-toolbar-right">
+          <button class="btn-ghost btn-sm" id="metas-enviar-todos">
+            <i data-lucide="send"></i> Enviar para todos
+          </button>
           <button class="btn-ghost btn-sm" id="metas-export"><i data-lucide="download"></i> Exportar CSV</button>
           <input type="text" class="search-input" id="metas-search" placeholder="Buscar vendedor..." />
         </div>
       </div>
+      <div id="metas-progresso" class="metas-progresso hidden"></div>
       <div class="table-wrapper" id="metas-table-wrap"></div>
     </div>
   `;
@@ -83,6 +96,66 @@ function _renderMetasPage(d) {
   });
 
   document.getElementById("metas-export").addEventListener("click", () => _exportarMetasCSV(vendedores, metas));
+
+  document.getElementById("metas-enviar-todos").addEventListener("click", () => _enviarParaTodos(vendedores, metas));
+}
+
+async function _enviarParaTodos(vendedores, metas) {
+  if (!vendedores.length) return;
+
+  const btn = document.getElementById("metas-enviar-todos");
+  const progresso = document.getElementById("metas-progresso");
+  btn.disabled = true;
+  btn.innerHTML = `<i data-lucide="loader" style="width:13px;height:13px;animation:spin 1s linear infinite"></i> Enviando...`;
+  lucide.createIcons();
+
+  progresso.classList.remove("hidden");
+  progresso.innerHTML = `<span id="prog-texto">Enviando 0 / ${vendedores.length}...</span><div class="prog-bar-wrap"><div class="prog-bar" id="prog-bar" style="width:0%"></div></div>`;
+
+  let enviados = 0, erros = 0;
+  for (const v of vendedores) {
+    const payload = {
+      slack_user_id:    SLACK_TEST_ID,
+      vendedor_nome:    v.nome,
+      pct_multimarca:   v.pct_multimarca,
+      pct_iaf_cabelos:  v.pct_iaf_cabelos,
+      pct_iaf_make:     v.pct_iaf_make,
+      meta_multimarca:  metas.multimarca,
+      meta_iaf_cabelos: metas.iaf_cabelos,
+      meta_iaf_make:    metas.iaf_make,
+    };
+    try {
+      const res = await fetch("/api/slack/enviar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (!res.ok || result.erro) throw new Error(result.erro);
+      enviados++;
+      // Marca o botão individual da linha como enviado
+      const btnLinha = document.querySelector(`.btn-slack[data-vdata*="${encodeURIComponent(v.nome).slice(0,20)}"]`);
+      if (btnLinha) {
+        btnLinha.innerHTML = `<i data-lucide="check" style="width:13px;height:13px;color:#4ADE80"></i>`;
+        lucide.createIcons();
+      }
+    } catch (_) {
+      erros++;
+    }
+    const pct = Math.round(((enviados + erros) / vendedores.length) * 100);
+    document.getElementById("prog-bar").style.width = pct + "%";
+    document.getElementById("prog-texto").textContent = `Enviando ${enviados + erros} / ${vendedores.length}...`;
+  }
+
+  const msg = erros
+    ? `${enviados} enviados, ${erros} com erro`
+    : `${enviados} mensagens enviadas no Slack ✓`;
+  progresso.innerHTML = `<span style="color:${erros ? "var(--accent-yellow)" : "#4ADE80"}">${msg}</span>`;
+  showToast(msg, erros ? "info" : "success");
+
+  btn.disabled = false;
+  btn.innerHTML = `<i data-lucide="send"></i> Enviar para todos`;
+  lucide.createIcons();
 }
 
 function _cardMeta(titulo, meta, qtdAcima, total, cor, icone) {
