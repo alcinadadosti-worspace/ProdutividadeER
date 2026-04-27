@@ -2,8 +2,19 @@
  * metas.js — Aba de Metas por Vendedor
  */
 
-// ID Slack de teste — substitua pelo mapa real quando cada vendedor tiver o seu
-const SLACK_TEST_ID = "U0895CZ8HU7";
+// Mapa de nome do vendedor (normalizado: maiúsculas sem acento) → ID Slack
+const SLACK_USER_MAP = {
+  "MARILIA ALICE DOS SANTOS SILVA":        "U0AKMRS669L",
+  "YASMIM DA ROCHA BEZERRA BARBOSA":       "U08F8T8SMNE",
+  "MARIA VICTORIA SOUZA ARAUJO FERRO":     "U08EZUH7X1C",
+  "ANE CAROLINE PEREIRA MARTER":           "U0A2PUWCUKS",
+  "RODRIGO AUGUSTO TEIXEIRA DOS SANTOS":   "U0922F5KB7U",
+};
+
+function _slackId(nome) {
+  const key = (nome || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
+  return SLACK_USER_MAP[key] || null;
+}
 
 let _metasData = null;
 let _metasSort = { col: "nome", asc: true };
@@ -112,10 +123,12 @@ async function _enviarParaTodos(vendedores, metas) {
   progresso.classList.remove("hidden");
   progresso.innerHTML = `<span id="prog-texto">Enviando 0 / ${vendedores.length}...</span><div class="prog-bar-wrap"><div class="prog-bar" id="prog-bar" style="width:0%"></div></div>`;
 
-  let enviados = 0, erros = 0;
+  let enviados = 0, erros = 0, sem_id = 0;
   for (const v of vendedores) {
+    const slackId = _slackId(v.nome);
+    if (!slackId) { sem_id++; continue; }
     const payload = {
-      slack_user_id:    SLACK_TEST_ID,
+      slack_user_id:    slackId,
       vendedor_nome:    v.nome,
       pct_multimarca:   v.pct_multimarca,
       pct_iaf_cabelos:  v.pct_iaf_cabelos,
@@ -142,14 +155,17 @@ async function _enviarParaTodos(vendedores, metas) {
     } catch (_) {
       erros++;
     }
-    const pct = Math.round(((enviados + erros) / vendedores.length) * 100);
+    const processados = enviados + erros;
+    const total_com_id = vendedores.length - sem_id;
+    const pct = total_com_id ? Math.round((processados / total_com_id) * 100) : 100;
     document.getElementById("prog-bar").style.width = pct + "%";
-    document.getElementById("prog-texto").textContent = `Enviando ${enviados + erros} / ${vendedores.length}...`;
+    document.getElementById("prog-texto").textContent = `Enviando ${processados} / ${total_com_id}...`;
   }
 
+  const sem_msg = sem_id ? `, ${sem_id} sem cadastro Slack` : "";
   const msg = erros
-    ? `${enviados} enviados, ${erros} com erro`
-    : `${enviados} mensagens enviadas no Slack ✓`;
+    ? `${enviados} enviados, ${erros} com erro${sem_msg}`
+    : `${enviados} mensagens enviadas no Slack ✓${sem_msg}`;
   progresso.innerHTML = `<span style="color:${erros ? "var(--accent-yellow)" : "#4ADE80"}">${msg}</span>`;
   showToast(msg, erros ? "info" : "success");
 
@@ -204,8 +220,9 @@ function _renderTabelaMetas(lista, metas) {
   const rows = sorted.map(v => {
     const metas_count = (v.atingiu_multimarca ? 1 : 0) + (v.atingiu_cabelos ? 1 : 0) + (v.atingiu_make ? 1 : 0);
     const tagCor = metas_count === 3 ? "#4ADE80" : metas_count === 2 ? "#FCD34D" : metas_count === 1 ? "#FB923C" : "#F87171";
+    const slackId = _slackId(v.nome);
     const vData = encodeURIComponent(JSON.stringify({
-      slack_user_id:   SLACK_TEST_ID,
+      slack_user_id:   slackId,
       vendedor_nome:   v.nome,
       pct_multimarca:  v.pct_multimarca,
       pct_iaf_cabelos: v.pct_iaf_cabelos,
@@ -221,7 +238,8 @@ function _renderTabelaMetas(lista, metas) {
             <button
               class="btn-slack"
               data-vdata="${vData}"
-              title="Enviar metas no Slack"
+              title="${slackId ? "Enviar metas no Slack" : "Vendedor sem cadastro no Slack"}"
+              ${slackId ? "" : "disabled style=\"opacity:0.35;cursor:not-allowed\""}
             ><i data-lucide="send" style="width:13px;height:13px"></i></button>
             <span style="font-weight:500">${v.nome}</span>
           </div>
@@ -257,6 +275,10 @@ function _renderTabelaMetas(lista, metas) {
   wrap.querySelectorAll(".btn-slack").forEach(btn => {
     btn.addEventListener("click", async () => {
       const payload = JSON.parse(decodeURIComponent(btn.dataset.vdata));
+      if (!payload.slack_user_id) {
+        showToast(`${payload.vendedor_nome} não tem cadastro no Slack`, "error");
+        return;
+      }
       btn.disabled = true;
       btn.innerHTML = `<i data-lucide="loader" style="width:13px;height:13px;animation:spin 1s linear infinite"></i>`;
       lucide.createIcons();
