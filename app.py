@@ -765,6 +765,8 @@ def vendedores():
 
     total_ciclos = len({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
 
+    total_pedidos_geral = sum(len(m["pedidos"]) for m in metricas.values())
+
     resultado = []
     for cod, m in metricas.items():
         total = m["total"]
@@ -785,6 +787,7 @@ def vendedores():
             "nome": m["nome"],
             "total_faturado": total,
             "qtd_pedidos": pedidos,
+            "pct_pedidos": (pedidos / total_pedidos_geral * 100) if total_pedidos_geral else 0,
             "ticket_medio": total / pedidos if pedidos else 0,
             "quantidade": m["quantidade"],
             "pct_iaf_cabelos": (m["iaf_cabelos"] / total * 100) if total else 0,

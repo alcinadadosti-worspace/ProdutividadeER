@@ -39,11 +39,12 @@ async function renderVendedores() {
     _renderTabelaVendedores(_vendData);
 
     document.getElementById("vend-export").addEventListener("click", () => {
-      const header = ["Vendedor","Código","Faturamento","Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make","% Multimarca","% Monomarca"];
+      const header = ["Vendedor","Código","Faturamento","Pedidos","% Pedidos","Ticket Médio","Itens","Marcas","Marca Principal","% Cabelos","% Make","% Multimarca","% Monomarca"];
       if (_vendCiclos >= 2) header.push("Revendedores","Retidos","% Retenção");
       const rows = _vendData.map(v => {
         const row = [
           v.nome, v.codigo, v.total_faturado.toFixed(2), v.qtd_pedidos,
+          (v.pct_pedidos ?? 0).toFixed(1),
           v.ticket_medio.toFixed(2), v.quantidade, v.qtd_marcas ?? "",
           v.top_marca || "", v.pct_iaf_cabelos.toFixed(1), v.pct_iaf_make.toFixed(1),
           (v.pct_pedidos_multimarca ?? 0).toFixed(1), (v.pct_pedidos_monomarca ?? 0).toFixed(1),
@@ -81,6 +82,7 @@ function _renderTabelaVendedores(lista) {
     { key: "codigo",         label: "Código",         align: "left" },
     { key: "total_faturado", label: "Faturamento",    align: "right" },
     { key: "qtd_pedidos",    label: "Pedidos",        align: "right" },
+    { key: "pct_pedidos",    label: "% Pedidos",      align: "right" },
     { key: "ticket_medio",   label: "Ticket Médio",   align: "right" },
     { key: "quantidade",     label: "Itens",          align: "right" },
     { key: "qtd_marcas",     label: "Marcas",         align: "right" },
@@ -112,6 +114,7 @@ function _renderTabelaVendedores(lista) {
       <td class="mono secondary">${v.codigo}</td>
       <td class="mono" style="text-align:right">${fmtBRL(v.total_faturado)}</td>
       <td class="mono" style="text-align:right">${fmtNum(v.qtd_pedidos)}</td>
+      <td class="mono secondary" style="text-align:right">${(v.pct_pedidos ?? 0).toFixed(1)}%</td>
       <td class="mono" style="text-align:right">${fmtBRL(v.ticket_medio)}</td>
       <td class="mono" style="text-align:right">${fmtNum(v.quantidade)}</td>
       <td class="mono" style="text-align:right">${v.qtd_marcas ?? "—"}</td>
