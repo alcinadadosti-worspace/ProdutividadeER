@@ -68,7 +68,7 @@ function _templateDashboard(d) {
           <div class="kpi-icon green"><i data-lucide="shopping-bag"></i></div>
         </div>
         <div class="kpi-value">${fmtNum(kpi.total_pedidos)}</div>
-        <div class="kpi-sub">Pedidos únicos</div>
+        <div class="kpi-sub">Notas fiscais únicas</div>
       </div>
       <div class="kpi-card" onclick="navegarPara('produtos')" style="cursor:pointer" title="Ver produtos">
         <div class="kpi-header">
@@ -85,6 +85,26 @@ function _templateDashboard(d) {
         </div>
         <div class="kpi-value">${fmtNum(kpi.total_itens)}</div>
         <div class="kpi-sub">Quantidade total</div>
+      </div>
+    </div>
+
+    <!-- Pedidos por origem (com vs. sem código de vendedor) -->
+    <div class="kpi-grid mb-12">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">Pedidos com Vendedor</span>
+          <div class="kpi-icon green"><i data-lucide="user-check"></i></div>
+        </div>
+        <div class="kpi-value">${fmtNum(kpi.pedidos_com_vendedor)}</div>
+        <div class="kpi-sub">${_pct(kpi.pct_pedidos_com_vendedor)} do total · atribuídos a um vendedor</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">Pedidos sem Vendedor (Caixa)</span>
+          <div class="kpi-icon" style="background:rgba(239,68,68,0.15);color:#ef4444"><i data-lucide="user-x"></i></div>
+        </div>
+        <div class="kpi-value" style="color:#ef4444">${fmtNum(kpi.pedidos_sem_vendedor)}</div>
+        <div class="kpi-sub">${_pct(kpi.pct_pedidos_sem_vendedor)} do total · faturado pelo caixa (${fmtBRL(kpi.fat_sem_vendedor)})</div>
       </div>
     </div>
 
@@ -356,6 +376,11 @@ function _abreviarNome(nome) {
   const partes = nome.trim().split(/\s+/);
   if (partes.length <= 2) return nome;
   return `${partes[0]} ${partes[partes.length - 1]}`;
+}
+
+function _pct(v) {
+  const n = Number(v) || 0;
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 }
 
 function _fmtData(s) {

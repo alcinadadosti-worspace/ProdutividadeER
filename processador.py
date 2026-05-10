@@ -34,6 +34,7 @@ COLUNAS_MAPEAMENTO = {
     "qtde":                         "Quantidade",
     "total praticado":              "TotalPraticado",
     "codigo pedido":                "CodigoPedido",
+    "nota fiscal":                  "NotaFiscal",
     "ciclo faturamento pedido":     "Ciclo",   # nome original do prompt
     "ciclo faturamento":            "Ciclo",   # nome real nos arquivos
     "data faturamento":             "DataFaturamento",
@@ -196,7 +197,7 @@ def ler_planilha(caminho_arquivo):
     # ── Passo 2: preencher campos de cabeçalho DENTRO de cada pedido
     # Assim dados de um pedido/vendedor não vazam para linhas de outros pedidos
     CAMPOS_CABECALHO = [
-        "CodigoVendedor", "Vendedor", "Ciclo",
+        "CodigoVendedor", "Vendedor", "Ciclo", "NotaFiscal",
         "CanalDistribuicao", "CodigoRevendedor", "Revendedor", "Papel", "PlanoPagamento",
         "CodigoUsuarioCriacao", "UsuarioCriacao",
         "CodigoUsuarioFinalizacao", "UsuarioFinalizacao",
@@ -209,6 +210,14 @@ def ler_planilha(caminho_arquivo):
             df_filtrado[campo] = df_filtrado.groupby("CodigoPedido", sort=False)[campo].transform("ffill")
         else:
             df_filtrado[campo] = df_filtrado[campo].ffill()
+
+    # Marca pedidos originalmente sem código de vendedor (faturados pelo caixa).
+    # Capturado APÓS o ffill por pedido mas ANTES do fallback de UsuarioCriacao.
+    if "CodigoVendedor" in df_filtrado.columns:
+        _vend = df_filtrado["CodigoVendedor"]
+        df_filtrado["_SemCodigoVendedor"] = _vend.isna() | (_vend.astype(str).str.strip().isin(["", "nan", "None", "<NA>"]))
+    else:
+        df_filtrado["_SemCodigoVendedor"] = True
 
     # Fallback: se CodigoVendedor ainda vazio, usar UsuarioCriacao (é quem criou o pedido = vendedor)
     if "CodigoVendedor" in df_filtrado.columns and "CodigoUsuarioCriacao" in df_filtrado.columns:
@@ -234,12 +243,14 @@ def ler_planilha(caminho_arquivo):
 
         # Strings simples
         for campo in [
-            "CodigoVendedor", "Vendedor", "Produto", "CodigoPedido",
+            "CodigoVendedor", "Vendedor", "Produto", "CodigoPedido", "NotaFiscal",
             "Ciclo", "CodigoRevendedor", "Revendedor", "Papel", "PlanoPagamento",
             "CodigoUsuarioCriacao", "UsuarioCriacao",
             "CodigoUsuarioFinalizacao", "UsuarioFinalizacao", "CanalDistribuicao",
         ]:
             venda[campo] = sv(campo)
+
+        venda["sem_codigo_vendedor"] = bool(row.get("_SemCodigoVendedor", False))
 
         # SKU
         sku_raw = sv("CodigoProduto")

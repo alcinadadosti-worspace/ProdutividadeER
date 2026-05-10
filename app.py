@@ -538,9 +538,27 @@ def dashboard():
         return jsonify(_dashboard_vazio())
 
     total_faturado = sum(_safe_float(v["TotalPraticado"]) for v in vendas)
-    pedidos_unicos = len({v["CodigoPedido"] for v in vendas if v.get("CodigoPedido")})
-    ticket_medio = total_faturado / pedidos_unicos if pedidos_unicos else 0
-    total_itens = sum(v.get("Quantidade", 0) for v in vendas)
+
+    # Pedidos contados por Nota Fiscal (uma nota = um pedido). Fallback para CodigoPedido se faltar.
+    notas_total  = set()
+    notas_sem    = set()
+    fat_sem_vend = 0.0
+    for v in vendas:
+        nf = v.get("NotaFiscal") or v.get("CodigoPedido")
+        if not nf:
+            continue
+        notas_total.add(nf)
+        if v.get("sem_codigo_vendedor"):
+            notas_sem.add(nf)
+            fat_sem_vend += _safe_float(v["TotalPraticado"])
+
+    pedidos_unicos    = len(notas_total)
+    pedidos_sem_vend  = len(notas_sem)
+    pedidos_com_vend  = pedidos_unicos - pedidos_sem_vend
+    pct_sem_vend      = (pedidos_sem_vend / pedidos_unicos * 100) if pedidos_unicos else 0
+    pct_com_vend      = (pedidos_com_vend / pedidos_unicos * 100) if pedidos_unicos else 0
+    ticket_medio      = total_faturado / pedidos_unicos if pedidos_unicos else 0
+    total_itens       = sum(v.get("Quantidade", 0) for v in vendas)
 
     datas = [v["DataFaturamento"] for v in vendas if v.get("DataFaturamento")]
     periodo_inicio = min(datas) if datas else None
@@ -612,6 +630,11 @@ def dashboard():
             "total_pedidos": pedidos_unicos,
             "ticket_medio": ticket_medio,
             "total_itens": total_itens,
+            "pedidos_com_vendedor": pedidos_com_vend,
+            "pedidos_sem_vendedor": pedidos_sem_vend,
+            "pct_pedidos_com_vendedor": pct_com_vend,
+            "pct_pedidos_sem_vendedor": pct_sem_vend,
+            "fat_sem_vendedor": fat_sem_vend,
         },
         "periodo": {"inicio": periodo_inicio, "fim": periodo_fim},
         "arquivo_nome": g.est["arquivo_nome"],
@@ -635,7 +658,12 @@ def dashboard():
 
 def _dashboard_vazio():
     return {
-        "kpis": {"total_faturado": 0, "total_pedidos": 0, "ticket_medio": 0, "total_itens": 0},
+        "kpis": {
+            "total_faturado": 0, "total_pedidos": 0, "ticket_medio": 0, "total_itens": 0,
+            "pedidos_com_vendedor": 0, "pedidos_sem_vendedor": 0,
+            "pct_pedidos_com_vendedor": 0, "pct_pedidos_sem_vendedor": 0,
+            "fat_sem_vendedor": 0,
+        },
         "periodo": {"inicio": None, "fim": None},
         "arquivo_nome": None,
         "total_registros": 0,
@@ -709,7 +737,7 @@ def vendedores():
         m["codigo"] = cod
         total = _safe_float(v["TotalPraticado"])
         m["total"] += total
-        ped = v.get("CodigoPedido")
+        ped = v.get("NotaFiscal") or v.get("CodigoPedido")
         if ped:
             m["pedidos"].add(ped)
         m["quantidade"] += v.get("Quantidade", 0)
