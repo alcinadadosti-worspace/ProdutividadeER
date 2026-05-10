@@ -10,11 +10,34 @@ import json
 import sqlite3
 import base64
 import threading
+import unicodedata
 import urllib.request
 import urllib.error
 from collections import defaultdict
 import secrets as _secrets_mod
 from datetime import datetime, timedelta
+
+
+def _norm_nome(s):
+    s = (s or "").strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+# Vendedores oficiais reconhecidos pelo grupo. Usado apenas para o KPI
+# "Pedidos com Vendedor" no dashboard — outras areas continuam considerando
+# qualquer Codigo Vendedor preenchido.
+VENDEDORES_OFICIAIS = {
+    _norm_nome(n) for n in [
+        # Filial Palmeira dos Indios
+        "YASMIM DA ROCHA BEZERRA BARBOSA",
+        "MARILIA ALICE DOS SANTOS SILVA",
+        "MARIA VICTORIA SOUZA ARAUJO FERRO",
+        # Matriz Penedo
+        "RODRIGO AUGUSTO TEIXEIRA DOS SANTOS",
+        "ANE CAROLINE PEREIRA MARTER",
+    ]
+}
 
 # Carrega variáveis do .env se existir (sem dependência externa)
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -540,9 +563,12 @@ def dashboard():
     total_faturado = sum(_safe_float(v["TotalPraticado"]) for v in vendas)
 
     # Pedidos contados por Nota Fiscal (uma nota = um pedido). Fallback para CodigoPedido se faltar.
-    notas_total  = set()
-    notas_sem    = set()
-    fat_sem_vend = 0.0
+    # "Pedidos com Vendedor" considera APENAS a whitelist VENDEDORES_OFICIAIS — pedidos atribuidos
+    # a outros usuarios (gerentes, supervisores) nao entram nesse card.
+    notas_total     = set()
+    notas_sem       = set()
+    notas_oficiais  = set()
+    fat_sem_vend    = 0.0
     for v in vendas:
         nf = v.get("NotaFiscal") or v.get("CodigoPedido")
         if not nf:
@@ -551,10 +577,12 @@ def dashboard():
         if v.get("sem_codigo_vendedor"):
             notas_sem.add(nf)
             fat_sem_vend += _safe_float(v["TotalPraticado"])
+        if _norm_nome(v.get("Vendedor")) in VENDEDORES_OFICIAIS:
+            notas_oficiais.add(nf)
 
     pedidos_unicos    = len(notas_total)
     pedidos_sem_vend  = len(notas_sem)
-    pedidos_com_vend  = pedidos_unicos - pedidos_sem_vend
+    pedidos_com_vend  = len(notas_oficiais)
     pct_sem_vend      = (pedidos_sem_vend / pedidos_unicos * 100) if pedidos_unicos else 0
     pct_com_vend      = (pedidos_com_vend / pedidos_unicos * 100) if pedidos_unicos else 0
     ticket_medio      = total_faturado / pedidos_unicos if pedidos_unicos else 0
