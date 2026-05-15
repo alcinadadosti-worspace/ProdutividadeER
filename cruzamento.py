@@ -15,12 +15,50 @@ from processador import normalizar_sku
 # Palavras-chave para fallback Siàge Cabelos
 PALAVRAS_SIAGE = {"KIT", "COMB", "SHAMP", "COND"}
 
-# Palavras-chave para fallback Make
-PALAVRAS_MAKE = {
-    "BATOM", "SOMBRA", "BLUSH", "BASE", "MASCARA", "DELINEADOR",
-    "CORRETIVO", "PO COMPACTO", "GLOSS", "PRIMER", "PALETA",
-    "CONTORNO", "ILUMINADOR", "FIXADOR", "LAPIS", "MAKE",
-}
+# ─── Heurística IAF Make pelo nome do produto ─────────────────────────────────
+# Exclusões: se o nome bater em qualquer um destes, NÃO é maquiagem.
+# Vem antes dos indicadores positivos para evitar falsos positivos (ex.: "BAT"
+# em BATERIA/BATEDOR, "BASE" em produtos corporais, etc.).
+EXCLUSOES_MAKE = (
+    # Perfumaria
+    "DES COL", "COLONIA", "EDP", "EDT", "EAU DE PARFUM",
+    "SPLASH", "PARFUMEE", "PERFUM",
+    # Corpo
+    "BODY SPRAY", "BODY SPLASH", "BODY MIST",
+    "CORPORAL", "LOC HID", "CR HID CPO",
+    # Capilar
+    "CABELO", "SHAMP", "COND", "MASCARA CAPILAR",
+    "OLEO CAPILAR", "LEAVE", "CREME PENT",
+    # Banho
+    "SAB BARRA", "SAB LIQ", "SABONETE",
+    # Falsos positivos de "BAT"
+    "BATERIA", "BATEDOR",
+    # Acessórios (pincel/esponja/maleta etc. não são IAF Make)
+    "PINCEL", "PINCEIS", "ESPONJA", "ESPNJ", "APLICADOR",
+    "MALETA", "NECESSAIRE", "NECESS", "FRASQUEIRA",
+    "ESPELHO", "APONTADOR", "CURVADOR",
+)
+
+# Indicadores positivos: se o nome passou pelas exclusões e bate em qualquer
+# um destes, classifica como IAF Make.
+INDICADORES_MAKE = (
+    # Batom
+    "BATOM", "BAT HID", "BAT MATE", "BAT LIQ", "BAT CREM", "BAT SEMIMATE",
+    "MAK BAT", "LIPSTICK", "LIP TINT", "LIP OIL", "LIP GLOSS",
+    # Olhos
+    "SOMBRA", "PALETA SOMBRA", "RIMEL", "MASCARA CILIOS",
+    "DELINEADOR", "LAP OLHO", "LAP SOBR",
+    # Boca
+    "GLOSS", "LABIAL", "LAP BOCA",
+    # Rosto
+    "BLUSH", "BRONZER", "ILUMINADOR", "PRIMER", "CORRETIVO",
+    "PO COMPACTO", "PO FACIAL", "CONTORNO",
+    "BASE LIQ", "BASE STICK", "BASE PO",
+    # Linhas
+    "MAKE B ", "EUD MAKE",
+    "NIINA SECRETS GLOSS", "NIINA SECRETS BAT", "NIINA SECRETS SOMBRA",
+    "QDB BAT", "QDB GLOSS", "QDB SOMBRA", "QDB BASE", "QDB BLUSH",
+)
 
 # ─── Categorias de produto ────────────────────────────────────────────────────
 # Ordem importa: categorias mais específicas primeiro.
@@ -184,9 +222,19 @@ def _contem_siage(nome):
     return any(p in n for p in PALAVRAS_SIAGE)
 
 
-def _contem_make(nome):
+def is_makeup_product(nome):
+    """Heurística: o nome do produto sugere que é maquiagem?
+
+    Só deve ser chamada quando o SKU não foi encontrado em iaf_make/iaf_cabelos.
+    Aplica exclusões antes dos indicadores positivos para evitar falsos
+    positivos com perfumaria, corpo, capilar, banho e siglas ambíguas como BAT.
+    """
+    if not nome:
+        return False
     n = nome.upper()
-    return any(p in n for p in PALAVRAS_MAKE)
+    if any(excl in n for excl in EXCLUSOES_MAKE):
+        return False
+    return any(ind in n for ind in INDICADORES_MAKE)
 
 
 def cruzar_vendas(vendas, indice_produtos, indice_iaf):
@@ -224,8 +272,8 @@ def cruzar_vendas(vendas, indice_produtos, indice_iaf):
             venda["classificacao_iaf"] = "IAF Cabelos"
             venda["metodo_match"] = "fallback_siage"
 
-        # 3. Fallback Make
-        elif _contem_make(nome_produto):
+        # 3. Fallback Make (heurística pelo nome, com exclusões)
+        elif is_makeup_product(nome_produto):
             venda["classificacao_iaf"] = "IAF Make"
             venda["metodo_match"] = "fallback_make"
 
