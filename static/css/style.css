@@ -1319,3 +1319,126 @@ tbody td.secondary { color: var(--text-secondary); }
 .btn-primary:hover { opacity: 0.85; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary svg { width: 14px; height: 14px; }
+
+/* ── Cancelados (modal + página) ─────────────────────────────────────────── */
+.modal-box-narrow { max-width: 560px; }
+
+.canc-pergunta .modal-info { margin: 0; }
+
+.canc-editor .canc-add-row,
+#canc-page-input + button,
+.canc-add-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.canc-input {
+  flex: 1;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: "SF Mono", "Menlo", monospace;
+  padding: 8px 12px;
+  letter-spacing: 0.04em;
+  transition: border-color var(--transition);
+}
+.canc-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.canc-feedback {
+  margin-top: 10px;
+  font-size: 12px;
+  min-height: 18px;
+  line-height: 1.5;
+}
+.canc-feedback-success { color: var(--accent-green); }
+.canc-feedback-error   { color: var(--accent-red); }
+.canc-feedback-info    { color: var(--text-secondary); }
+
+.canc-list-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+
+.canc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.canc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  padding: 4px 4px 4px 12px;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.canc-chip.is-new {
+  border-color: var(--accent-green);
+  background: rgba(74, 222, 128, 0.08);
+}
+.canc-chip-codigo { line-height: 1; }
+.canc-chip-tag {
+  font-size: 10px;
+  font-family: "SF Pro Text", sans-serif;
+  color: var(--accent-green);
+  background: rgba(74, 222, 128, 0.15);
+  border-radius: 999px;
+  padding: 2px 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.canc-chip-rm {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+}
+.canc-chip-rm:hover { color: var(--accent-red); background: rgba(248,113,113,0.08); }
+.canc-chip-rm svg { width: 12px; height: 12px; }
+
+/* Página /cancelados */
+.canc-page-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.canc-row { transition: background var(--transition); }
+.canc-row:hover { background: var(--bg-tertiary); }
+.canc-detail.hidden { display: none; }
+
+.canc-inner-table {
+  width: 100%;
+  font-size: 12px;
+}
+.canc-inner-table th,
+.canc-inner-table td {
+  padding: 6px 10px;
+}
+.canc-inner-table th {
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}

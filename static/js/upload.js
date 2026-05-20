@@ -265,6 +265,18 @@ async function _removerCiclo(ciclo) {
 async function _processar() {
   if (!_arquivoAtual) return;
 
+  // Antes de processar, perguntar sobre pedidos cancelados.
+  // O modal chama `continuar()` quando o usuário concluir (Não ou Concluir).
+  if (typeof abrirModalCanceladosPergunta === "function") {
+    abrirModalCanceladosPergunta(() => _processarAgora());
+  } else {
+    _processarAgora();
+  }
+}
+
+async function _processarAgora() {
+  if (!_arquivoAtual) return;
+
   const btn = document.getElementById("btn-processar");
   btn.disabled = true;
   btn.innerHTML = '<i data-lucide="loader"></i> Processando...';
@@ -285,9 +297,12 @@ async function _processar() {
     }
 
     _esconderProgress();
-    const msg = data.novos_registros === 0
+    let msg = data.novos_registros === 0
       ? `Planilha já estava carregada — nenhum registro novo adicionado`
       : `${fmtNum(data.novos_registros)} novos registros adicionados (total: ${fmtNum(data.total_processado)})`;
+    if (data.registros_cancelados_excluidos) {
+      msg += ` · ${fmtNum(data.registros_cancelados_excluidos)} excluído(s) como cancelado(s)`;
+    }
     showToast(msg, "success");
     atualizarStatusBadge(data.total_processado);
     _renderCiclosCarregados();

@@ -5,6 +5,7 @@ Analisador de Vendas — Grupo Alcina Maria / Grupo Boticário Alagoas
 
 import os
 import io
+import re
 import csv
 import json
 import sqlite3
@@ -58,9 +59,10 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 
 # ─── Caminhos ─────────────────────────────────────────────────────────────────
-BASE_DIR   = os.path.dirname(__file__)
-DB_PATH    = os.path.join(BASE_DIR, "produtos.db")
-STATE_FILE = os.path.join(BASE_DIR, "_state.json")
+BASE_DIR        = os.path.dirname(__file__)
+DB_PATH         = os.path.join(BASE_DIR, "produtos.db")
+STATE_FILE      = os.path.join(BASE_DIR, "_state.json")
+CANCELADOS_FILE = os.path.join(BASE_DIR, "cancelados.json")
 
 # ─── GitHub — persistência permanente de marcas_catalog.json ──────────────────
 _GH_TOKEN  = os.environ.get("GITHUB_TOKEN", "")
@@ -158,6 +160,11 @@ _marcas_gh_ts: float   = 0.0
 _MARCAS_GH_TTL         = 300  # segundos (5 min)
 _marcas_gh_lock        = threading.Lock()
 
+# Carregamento da lista global de pedidos cancelados acontece em
+# _carregar_cancelados_disco() (definida adiante). A chamada efetiva é feita
+# logo depois que a função existe, garantindo o set populado antes de qualquer
+# request chegar.
+
 
 def _gh_ler_marcas_cached():
     """Retorna marcas do GitHub usando cache em memória com TTL de 5 minutos."""
@@ -181,6 +188,60 @@ def _gh_invalidar_cache():
         _marcas_gh_ts = 0.0
 
 
+# ─── Pedidos cancelados — lista global permanente ─────────────────────────────
+# A lista é única para o app inteiro (não por sessão). Vendas cujo CodigoPedido
+# bate com qualquer código aqui são separadas em "vendas_canceladas" e não
+# contribuem para o dashboard / KPIs.
+
+_CANCELADOS_LOCK = threading.Lock()
+_CANCELADOS_SET: set = set()
+
+
+def _normalizar_codigo_pedido(valor):
+    """Extrai apenas dígitos do código do pedido. Ex: '503.638.930' → '503638930'."""
+    if valor is None:
+        return ""
+    return re.sub(r"[^\d]", "", str(valor))
+
+
+def _carregar_cancelados_disco():
+    """Lê cancelados.json para o set em memória. Tolerante a arquivo ausente."""
+    global _CANCELADOS_SET
+    try:
+        if os.path.exists(CANCELADOS_FILE):
+            with open(CANCELADOS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            lista = data.get("cancelados", []) if isinstance(data, dict) else []
+            _CANCELADOS_SET = {
+                _normalizar_codigo_pedido(c) for c in lista
+                if _normalizar_codigo_pedido(c)
+            }
+            app.logger.info(f"[Cancelados] {len(_CANCELADOS_SET)} pedidos carregados do disco")
+    except Exception as e:
+        app.logger.warning(f"[Cancelados] Erro ao carregar {CANCELADOS_FILE}: {e}")
+        _CANCELADOS_SET = set()
+
+
+def _salvar_cancelados_disco():
+    """Persiste o set atual em cancelados.json."""
+    try:
+        with open(CANCELADOS_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {"cancelados": sorted(_CANCELADOS_SET)},
+                f, ensure_ascii=False, indent=2,
+            )
+    except Exception as e:
+        app.logger.error(f"[Cancelados] Erro ao salvar {CANCELADOS_FILE}: {e}")
+
+
+def _eh_cancelado(venda):
+    return _normalizar_codigo_pedido(venda.get("CodigoPedido")) in _CANCELADOS_SET
+
+
+# Popula o set imediatamente após a definição da função.
+_carregar_cancelados_disco()
+
+
 def _sid():
     """Retorna (ou cria) o ID de sessão do browser atual."""
     if "sid" not in session:
@@ -200,6 +261,7 @@ def _tmp_path_sid(sid, ext):
 def _estado_inicial():
     return {
         "vendas": [],
+        "vendas_canceladas": [],
         "arquivo_nome": None,
         "processado_em": None,
         "indice_produtos": None,
@@ -215,10 +277,11 @@ def _carregar_estado_sessao(sid, est):
         try:
             with open(sf, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            est["vendas"]         = data.get("vendas", [])
-            est["arquivo_nome"]   = data.get("arquivo_nome")
-            est["processado_em"]  = data.get("processado_em")
-            est["marcas_usuario"] = data.get("marcas_usuario", {})
+            est["vendas"]             = data.get("vendas", [])
+            est["vendas_canceladas"]  = data.get("vendas_canceladas", [])
+            est["arquivo_nome"]       = data.get("arquivo_nome")
+            est["processado_em"]      = data.get("processado_em")
+            est["marcas_usuario"]     = data.get("marcas_usuario", {})
             if est["vendas"]:
                 app.logger.info(f"[Sessão {sid[:8]}] {len(est['vendas'])} registros restaurados do disco")
         except Exception as e:
@@ -271,6 +334,7 @@ def _salvar_estado():
         with open(sf, "w", encoding="utf-8") as f:
             json.dump({
                 "vendas": est["vendas"],
+                "vendas_canceladas": est.get("vendas_canceladas", []),
                 "arquivo_nome": est["arquivo_nome"],
                 "processado_em": est["processado_em"],
                 "marcas_usuario": est["marcas_usuario"],
@@ -445,17 +509,25 @@ def processar():
 
         vendas = _aplicar_marcas_usuario(vendas)
 
+        # ── Separar vendas canceladas (lista global permanente) ───────────────
+        # Linhas cujo CodigoPedido bate com a lista de cancelados não vão para
+        # análise — ficam isoladas em "vendas_canceladas" para a aba dedicada.
+        vendas_ok   = [v for v in vendas if not _eh_cancelado(v)]
+        vendas_canc = [v for v in vendas if     _eh_cancelado(v)]
+
         # ── Mesclar com dados existentes (sem sobrescrever) ───────────────────
         # Chave de deduplicação: CodigoPedido + CodigoProduto_normalizado
-        existentes = {
-            (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "")
-            for v in g.est["vendas"]
-        }
-        novas = [
-            v for v in vendas
-            if (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "") not in existentes
-        ]
+        def _chave(v):
+            return (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "")
+
+        existentes = {_chave(v) for v in g.est["vendas"]}
+        novas = [v for v in vendas_ok if _chave(v) not in existentes]
         g.est["vendas"] = g.est["vendas"] + novas
+
+        existentes_canc = {_chave(v) for v in g.est.get("vendas_canceladas", [])}
+        novas_canc = [v for v in vendas_canc if _chave(v) not in existentes_canc]
+        g.est["vendas_canceladas"] = g.est.get("vendas_canceladas", []) + novas_canc
+
         g.est["arquivo_nome"] = nome_arquivo
         g.est["processado_em"] = datetime.now().isoformat()
         _salvar_estado()
@@ -465,6 +537,8 @@ def processar():
             "ok": True,
             "total_processado": len(g.est["vendas"]),
             "novos_registros": len(novas),
+            "registros_cancelados_excluidos": len(novas_canc),
+            "total_cancelados_acumulado": len(g.est["vendas_canceladas"]),
             "processado_em": g.est["processado_em"],
             "ciclos": ciclos,
         })
@@ -473,11 +547,187 @@ def processar():
         return jsonify({"erro": f"Erro no processamento: {str(e)}", "detalhe": traceback.format_exc()}), 500
 
 
+@app.route("/api/cancelados", methods=["GET"])
+def cancelados_listar():
+    """Retorna a lista permanente de códigos de pedido cancelados."""
+    with _CANCELADOS_LOCK:
+        lista = sorted(_CANCELADOS_SET)
+    return jsonify({"cancelados": lista, "total": len(lista)})
+
+
+@app.route("/api/cancelados", methods=["POST"])
+def cancelados_adicionar():
+    """Adiciona um ou mais códigos de pedido à lista permanente.
+    Body: {"codigos": ["503638930", ...]}  (aceita também 'codigo' singular).
+    Cada código deve ter exatamente 9 dígitos após normalização (remoção de
+    pontos, espaços, traços). Move vendas correspondentes em memória para
+    'vendas_canceladas'."""
+    body = request.json or {}
+    entrada = body.get("codigos")
+    if entrada is None and "codigo" in body:
+        entrada = [body["codigo"]]
+    if not isinstance(entrada, list):
+        return jsonify({"erro": "Envie 'codigos' como lista ou 'codigo' como string"}), 400
+
+    adicionados = []
+    rejeitados  = []
+    for raw in entrada:
+        cod = _normalizar_codigo_pedido(raw)
+        if len(cod) != 9:
+            rejeitados.append({"valor": str(raw), "motivo": "deve conter exatamente 9 dígitos"})
+            continue
+        with _CANCELADOS_LOCK:
+            if cod in _CANCELADOS_SET:
+                rejeitados.append({"valor": str(raw), "motivo": "já estava na lista"})
+                continue
+            _CANCELADOS_SET.add(cod)
+        adicionados.append(cod)
+
+    if adicionados:
+        with _CANCELADOS_LOCK:
+            _salvar_cancelados_disco()
+
+        # Move linhas já presentes em g.est["vendas"] para vendas_canceladas
+        movidas = [v for v in g.est["vendas"] if _eh_cancelado(v)]
+        if movidas:
+            g.est["vendas"] = [v for v in g.est["vendas"] if not _eh_cancelado(v)]
+            existentes_canc = {
+                (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "")
+                for v in g.est.get("vendas_canceladas", [])
+            }
+            novas_canc = [
+                v for v in movidas
+                if (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "") not in existentes_canc
+            ]
+            g.est["vendas_canceladas"] = g.est.get("vendas_canceladas", []) + novas_canc
+            _salvar_estado()
+        movidas_total = len(movidas)
+    else:
+        movidas_total = 0
+
+    with _CANCELADOS_LOCK:
+        total = len(_CANCELADOS_SET)
+        lista = sorted(_CANCELADOS_SET)
+
+    return jsonify({
+        "ok": True,
+        "adicionados": adicionados,
+        "rejeitados": rejeitados,
+        "linhas_movidas": movidas_total,
+        "total": total,
+        "cancelados": lista,
+    })
+
+
+@app.route("/api/cancelados/<codigo>", methods=["DELETE"])
+def cancelados_remover(codigo):
+    """Remove um código de pedido da lista. Devolve as linhas correspondentes
+    para 'vendas' (deixa de tratá-las como canceladas)."""
+    cod = _normalizar_codigo_pedido(codigo)
+    if len(cod) != 9:
+        return jsonify({"erro": "Código deve conter 9 dígitos"}), 400
+
+    with _CANCELADOS_LOCK:
+        existia = cod in _CANCELADOS_SET
+        _CANCELADOS_SET.discard(cod)
+        if existia:
+            _salvar_cancelados_disco()
+
+    if not existia:
+        return jsonify({"erro": "Código não estava na lista"}), 404
+
+    # Devolve linhas para vendas
+    voltam = [
+        v for v in g.est.get("vendas_canceladas", [])
+        if _normalizar_codigo_pedido(v.get("CodigoPedido")) == cod
+    ]
+    if voltam:
+        g.est["vendas_canceladas"] = [
+            v for v in g.est.get("vendas_canceladas", [])
+            if _normalizar_codigo_pedido(v.get("CodigoPedido")) != cod
+        ]
+        existentes = {
+            (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "")
+            for v in g.est["vendas"]
+        }
+        novas = [
+            v for v in voltam
+            if (v.get("CodigoPedido") or "", v.get("CodigoProduto_normalizado") or "") not in existentes
+        ]
+        g.est["vendas"] = g.est["vendas"] + novas
+        _salvar_estado()
+
+    with _CANCELADOS_LOCK:
+        total = len(_CANCELADOS_SET)
+        lista = sorted(_CANCELADOS_SET)
+
+    return jsonify({
+        "ok": True,
+        "removido": cod,
+        "linhas_devolvidas": len(voltam),
+        "total": total,
+        "cancelados": lista,
+    })
+
+
+@app.route("/api/cancelados/dados")
+def cancelados_dados():
+    """Retorna detalhes (todas as linhas) de cada pedido cancelado.
+    Agrupado por código de pedido. Inclui códigos da lista que ainda não
+    apareceram em nenhuma planilha (encontrado=false)."""
+    with _CANCELADOS_LOCK:
+        codigos = sorted(_CANCELADOS_SET)
+
+    por_codigo = defaultdict(list)
+    for v in g.est.get("vendas_canceladas", []):
+        cod = _normalizar_codigo_pedido(v.get("CodigoPedido"))
+        if cod:
+            por_codigo[cod].append(v)
+
+    campos = [
+        "CodigoVendedor", "Vendedor", "CodigoProduto", "Produto", "marca",
+        "Quantidade", "TotalPraticado", "CodigoPedido", "Ciclo",
+        "DataFaturamento", "Revendedor", "Papel", "PlanoPagamento",
+        "Unidade", "CanalDistribuicao", "classificacao_iaf",
+        "NotaFiscal", "UsuarioCriacao", "UsuarioFinalizacao",
+    ]
+
+    resultado = []
+    for cod in codigos:
+        linhas_raw = por_codigo.get(cod, [])
+        linhas = [{c: v.get(c) for c in campos} for v in linhas_raw]
+        total = sum(_safe_float(v.get("TotalPraticado")) for v in linhas_raw)
+        qtd_itens = sum(int(v.get("Quantidade") or 0) for v in linhas_raw)
+        primeira = linhas_raw[0] if linhas_raw else {}
+        resultado.append({
+            "codigo": cod,
+            "encontrado": bool(linhas_raw),
+            "total_linhas": len(linhas_raw),
+            "total_faturado": total,
+            "qtd_itens": qtd_itens,
+            "vendedor": primeira.get("Vendedor") or "",
+            "revendedor": primeira.get("Revendedor") or "",
+            "ciclo": primeira.get("Ciclo") or "",
+            "data": primeira.get("DataFaturamento") or "",
+            "linhas": linhas,
+        })
+
+    return jsonify({
+        "cancelados": resultado,
+        "total_codigos": len(codigos),
+        "total_linhas": sum(r["total_linhas"] for r in resultado),
+        "total_faturado_excluido": sum(r["total_faturado"] for r in resultado),
+    })
+
+
 @app.route("/api/limpar", methods=["POST"])
 def limpar():
-    """Remove todos os dados processados e reseta o estado."""
+    """Remove todos os dados processados e reseta o estado.
+    Não toca em cancelados.json (lista permanente) — apenas nas linhas
+    em memória que estavam classificadas como canceladas."""
     sid = session.get("sid", "")
     g.est["vendas"] = []
+    g.est["vendas_canceladas"] = []
     g.est["arquivo_nome"] = None
     g.est["processado_em"] = None
     g.est["indice_produtos"] = None
@@ -499,6 +749,9 @@ def limpar_ciclo():
         return jsonify({"erro": "Ciclo não informado"}), 400
     antes = len(g.est["vendas"])
     g.est["vendas"] = [v for v in g.est["vendas"] if v.get("Ciclo") != ciclo]
+    g.est["vendas_canceladas"] = [
+        v for v in g.est.get("vendas_canceladas", []) if v.get("Ciclo") != ciclo
+    ]
     removidos = antes - len(g.est["vendas"])
     if not g.est["vendas"]:
         g.est["arquivo_nome"] = None

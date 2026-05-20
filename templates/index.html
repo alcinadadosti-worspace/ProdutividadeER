@@ -63,6 +63,10 @@
           <i data-lucide="table"></i>
           <span>Dados Brutos</span>
         </a>
+        <a href="#cancelados" class="nav-item" data-page="cancelados">
+          <i data-lucide="ban"></i>
+          <span>Cancelados</span>
+        </a>
       </nav>
 
       <div class="sidebar-footer">
@@ -107,6 +111,7 @@
       <div id="page-iaf" class="page hidden"></div>
       <div id="page-metas" class="page hidden"></div>
       <div id="page-dados" class="page hidden"></div>
+      <div id="page-cancelados" class="page hidden"></div>
 
     </main>
 
@@ -124,6 +129,21 @@
       </div>
       <div id="drawer-content" class="drawer-content"></div>
     </aside>
+
+  <!-- ── Modal: Pedidos Cancelados (acionado no upload) ───────────────── -->
+  <div id="modal-cancelados" class="modal-backdrop hidden">
+    <div class="modal-box modal-box-narrow">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="modal-canc-title">Existe algum pedido cancelado?</div>
+          <div class="modal-subtitle" id="modal-canc-sub"></div>
+        </div>
+        <button class="btn-icon" id="modal-canc-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body" id="modal-canc-body"></div>
+      <div class="modal-footer" id="modal-canc-footer"></div>
+    </div>
+  </div>
 
   <!-- ── Modal: Produtos sem Marca ────────────────────────────────────── -->
   <div id="modal-sem-marca" class="modal-backdrop hidden">
@@ -163,6 +183,7 @@
   <script src="/static/js/iaf.js"></script>
   <script src="/static/js/metas.js"></script>
   <script src="/static/js/dados.js"></script>
+  <script src="/static/js/cancelados.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
