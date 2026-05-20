@@ -64,11 +64,14 @@ DB_PATH         = os.path.join(BASE_DIR, "produtos.db")
 STATE_FILE      = os.path.join(BASE_DIR, "_state.json")
 CANCELADOS_FILE = os.path.join(BASE_DIR, "cancelados.json")
 
-# ─── GitHub — persistência permanente de marcas_catalog.json ──────────────────
-_GH_TOKEN  = os.environ.get("GITHUB_TOKEN", "")
-_GH_REPO   = os.environ.get("GITHUB_REPO", "alcinadadosti-worspace/ProdutividadeER")
-_GH_BRANCH = os.environ.get("GITHUB_BRANCH", "master")
-_GH_FILE   = "marcas_catalog.json"
+# ─── GitHub — persistência permanente de arquivos de estado ──────────────────
+# marcas_catalog.json e cancelados.json sobrevivem a deploys do Render gravando
+# o JSON via Contents API do GitHub a cada modificação.
+_GH_TOKEN          = os.environ.get("GITHUB_TOKEN", "")
+_GH_REPO           = os.environ.get("GITHUB_REPO", "alcinadadosti-worspace/ProdutividadeER")
+_GH_BRANCH         = os.environ.get("GITHUB_BRANCH", "master")
+_GH_FILE_MARCAS    = "marcas_catalog.json"
+_GH_FILE_CANCELADOS = "cancelados.json"
 
 
 def _gh_ok():
@@ -99,7 +102,7 @@ def _gh_ler_marcas():
     if not _gh_ok():
         return {}
     try:
-        resp = _gh_request("GET", _GH_FILE)
+        resp = _gh_request("GET", _GH_FILE_MARCAS)
         if not resp:
             return {}
         conteudo = base64.b64decode(resp["content"]).decode("utf-8")
@@ -119,7 +122,7 @@ def _gh_salvar_marcas(marcas_dict):
         conteudo = json.dumps(marcas_dict, ensure_ascii=False, indent=2)
         encoded  = base64.b64encode(conteudo.encode("utf-8")).decode()
 
-        atual = _gh_request("GET", _GH_FILE)
+        atual = _gh_request("GET", _GH_FILE_MARCAS)
         sha   = atual["sha"] if atual else None
 
         body = {
@@ -130,7 +133,7 @@ def _gh_salvar_marcas(marcas_dict):
         if sha:
             body["sha"] = sha
 
-        _gh_request("PUT", _GH_FILE, body)
+        _gh_request("PUT", _GH_FILE_MARCAS, body)
         app.logger.info(f"[GitHub] marcas_catalog.json atualizado ({len(marcas_dict)} entradas)")
         return True, None
     except urllib.error.HTTPError as e:
@@ -140,6 +143,61 @@ def _gh_salvar_marcas(marcas_dict):
         return False, msg
     except Exception as e:
         app.logger.warning(f"[GitHub] Erro ao salvar: {e}")
+        return False, str(e)
+
+
+def _gh_ler_cancelados():
+    """Lê cancelados.json do GitHub. Retorna lista de strings (códigos)."""
+    if not _gh_ok():
+        return []
+    try:
+        resp = _gh_request("GET", _GH_FILE_CANCELADOS)
+        if not resp:
+            return []
+        conteudo = base64.b64decode(resp["content"]).decode("utf-8")
+        data = json.loads(conteudo)
+        if isinstance(data, dict):
+            return data.get("cancelados", []) or []
+        return []
+    except Exception as e:
+        app.logger.warning(f"[GitHub] Erro ao ler cancelados: {e}")
+        return []
+
+
+def _gh_salvar_cancelados(codigos_set):
+    """Salva cancelados.json no GitHub. Retorna (ok, erro).
+    Aceita salvar lista vazia (diferente das marcas) — remover o último código
+    deve refletir no repositório."""
+    if not _gh_ok():
+        return False, "GITHUB_TOKEN não configurado"
+    try:
+        conteudo = json.dumps(
+            {"cancelados": sorted(codigos_set)},
+            ensure_ascii=False, indent=2,
+        )
+        encoded = base64.b64encode(conteudo.encode("utf-8")).decode()
+
+        atual = _gh_request("GET", _GH_FILE_CANCELADOS)
+        sha   = atual["sha"] if atual else None
+
+        body = {
+            "message": f"chore: atualizar lista de pedidos cancelados ({len(codigos_set)}) [auto]",
+            "content": encoded,
+            "branch":  _GH_BRANCH,
+        }
+        if sha:
+            body["sha"] = sha
+
+        _gh_request("PUT", _GH_FILE_CANCELADOS, body)
+        app.logger.info(f"[GitHub] cancelados.json atualizado ({len(codigos_set)} códigos)")
+        return True, None
+    except urllib.error.HTTPError as e:
+        corpo = e.read().decode("utf-8", errors="replace")
+        msg = f"HTTP {e.code}: {corpo}"
+        app.logger.warning(f"[GitHub] Erro ao salvar cancelados: {msg}")
+        return False, msg
+    except Exception as e:
+        app.logger.warning(f"[GitHub] Erro ao salvar cancelados: {e}")
         return False, str(e)
 
 
@@ -205,7 +263,8 @@ def _normalizar_codigo_pedido(valor):
 
 
 def _carregar_cancelados_disco():
-    """Lê cancelados.json para o set em memória. Tolerante a arquivo ausente."""
+    """Lê cancelados.json (disco local) para o set em memória.
+    Tolerante a arquivo ausente."""
     global _CANCELADOS_SET
     try:
         if os.path.exists(CANCELADOS_FILE):
@@ -220,6 +279,37 @@ def _carregar_cancelados_disco():
     except Exception as e:
         app.logger.warning(f"[Cancelados] Erro ao carregar {CANCELADOS_FILE}: {e}")
         _CANCELADOS_SET = set()
+
+
+def _sincronizar_cancelados_github():
+    """Baixa cancelados.json do GitHub e mescla (união) com o set em memória.
+    Roda no startup — em ambientes efêmeros (Render) o disco local é zerado
+    a cada deploy, então o GitHub é a fonte de verdade. A união evita perder
+    códigos adicionados localmente caso a sincronização anterior tenha falhado.
+    Sobre conflito: se o GitHub e o disco divergirem, ambos os códigos são
+    mantidos. Remoções precisam ser propagadas via DELETE."""
+    global _CANCELADOS_SET
+    if not _gh_ok():
+        return
+    try:
+        remotos = _gh_ler_cancelados()
+        remotos_set = {
+            _normalizar_codigo_pedido(c) for c in remotos
+            if _normalizar_codigo_pedido(c)
+        }
+        antes = len(_CANCELADOS_SET)
+        _CANCELADOS_SET = _CANCELADOS_SET | remotos_set
+        depois = len(_CANCELADOS_SET)
+        app.logger.info(
+            f"[Cancelados] Sincronizado com GitHub: "
+            f"{len(remotos_set)} no remoto, {antes} local, {depois} mesclado"
+        )
+        # Se a mesclagem mudou alguma coisa, persiste no disco local pra próximas
+        # leituras coincidirem com o estado em memória.
+        if depois != len(remotos_set) or depois != antes:
+            _salvar_cancelados_disco()
+    except Exception as e:
+        app.logger.warning(f"[Cancelados] Erro na sincronização com GitHub: {e}")
 
 
 def _salvar_cancelados_disco():
@@ -239,7 +329,10 @@ def _eh_cancelado(venda):
 
 
 # Popula o set imediatamente após a definição da função.
+# Primeiro lê o disco (fallback), depois mescla com GitHub (fonte de verdade
+# em ambientes efêmeros como o Render).
 _carregar_cancelados_disco()
+_sincronizar_cancelados_github()
 
 
 def _sid():
@@ -583,9 +676,15 @@ def cancelados_adicionar():
             _CANCELADOS_SET.add(cod)
         adicionados.append(cod)
 
+    gh_ok = None
+    gh_erro = None
     if adicionados:
         with _CANCELADOS_LOCK:
             _salvar_cancelados_disco()
+            snapshot = set(_CANCELADOS_SET)
+
+        # Persistência permanente: salva no GitHub para sobreviver a redeploys.
+        gh_ok, gh_erro = _gh_salvar_cancelados(snapshot)
 
         # Move linhas já presentes em g.est["vendas"] para vendas_canceladas
         movidas = [v for v in g.est["vendas"] if _eh_cancelado(v)]
@@ -616,6 +715,7 @@ def cancelados_adicionar():
         "linhas_movidas": movidas_total,
         "total": total,
         "cancelados": lista,
+        "github": {"ok": gh_ok, "erro": gh_erro},
     })
 
 
@@ -632,9 +732,13 @@ def cancelados_remover(codigo):
         _CANCELADOS_SET.discard(cod)
         if existia:
             _salvar_cancelados_disco()
+        snapshot = set(_CANCELADOS_SET)
 
     if not existia:
         return jsonify({"erro": "Código não estava na lista"}), 404
+
+    # Persistência permanente: sincroniza remoção com GitHub.
+    gh_ok, gh_erro = _gh_salvar_cancelados(snapshot)
 
     # Devolve linhas para vendas
     voltam = [
@@ -667,6 +771,7 @@ def cancelados_remover(codigo):
         "linhas_devolvidas": len(voltam),
         "total": total,
         "cancelados": lista,
+        "github": {"ok": gh_ok, "erro": gh_erro},
     })
 
 
@@ -778,28 +883,33 @@ def status():
 
 @app.route("/api/gh-status")
 def gh_status():
-    """Diagnóstico da integração com GitHub."""
+    """Diagnóstico da integração com GitHub (marcas + cancelados)."""
     resultado = {
         "token_configurado": bool(_GH_TOKEN),
         "repo": _GH_REPO,
         "branch": _GH_BRANCH,
-        "arquivo": _GH_FILE,
+        "arquivos": {
+            "marcas":     {"path": _GH_FILE_MARCAS},
+            "cancelados": {"path": _GH_FILE_CANCELADOS},
+        },
     }
     if not _gh_ok():
         resultado["erro"] = "GITHUB_TOKEN não configurado"
         return jsonify(resultado), 200
 
-    try:
-        resp = _gh_request("GET", _GH_FILE)
-        if resp:
-            resultado["arquivo_existe"] = True
-            resultado["tamanho_bytes"]  = resp.get("size", 0)
-            resultado["ultimo_commit"]  = resp.get("sha", "")[:7]
-        else:
-            resultado["arquivo_existe"] = False
-            resultado["info"] = "Arquivo ainda não criado — atribua marcas pelo modal para criá-lo"
-    except Exception as e:
-        resultado["erro_api"] = str(e)
+    for chave, path in (("marcas", _GH_FILE_MARCAS), ("cancelados", _GH_FILE_CANCELADOS)):
+        try:
+            resp = _gh_request("GET", path)
+            if resp:
+                resultado["arquivos"][chave].update({
+                    "existe": True,
+                    "tamanho_bytes": resp.get("size", 0),
+                    "ultimo_commit": resp.get("sha", "")[:7],
+                })
+            else:
+                resultado["arquivos"][chave]["existe"] = False
+        except Exception as e:
+            resultado["arquivos"][chave]["erro_api"] = str(e)
 
     return jsonify(resultado)
 
