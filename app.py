@@ -524,6 +524,72 @@ def _safe_float(v):
         return 0.0
 
 
+def _multimarca_por_cliente(vendas, bonus_primeiro=0.02, teto=100.0):
+    """Multimarca por CLIENTE (revendedor), agrupado por vendedor.
+
+    Regra oficial:
+      - Cliente ativo = revendedor com ao menos 1 pedido no período.
+      - Cliente multimarca = comprou 2+ marcas distintas somando TODOS os pedidos.
+      - Cada cliente conta UMA vez; é creditado ao vendedor do 1º pedido dele
+        (ordenado pelo Código do Pedido, que é cronológico).
+      - Bônus de +2% quando o cliente já é multimarca no 1º pedido.
+      - % = soma dos pontos / clientes ativos, limitado a `teto` (100%).
+
+    Retorna { cod_vendedor: {ativos, multi, mono, first, built, pontos, pct} }.
+    """
+    # 1. Agrupar linhas por pedido
+    pedidos = {}
+    for v in vendas:
+        ped = v.get("CodigoPedido") or v.get("NotaFiscal")
+        if not ped:
+            continue
+        p = pedidos.get(ped)
+        if p is None:
+            digs = "".join(ch for ch in str(ped) if ch.isdigit())
+            p = pedidos[ped] = {"vend": "", "rev": "", "ordem": int(digs) if digs else 0, "marcas": set()}
+        if not p["vend"] and v.get("CodigoVendedor"):
+            p["vend"] = v.get("CodigoVendedor")
+        if not p["rev"]:
+            p["rev"] = v.get("CodigoRevendedor") or v.get("Revendedor") or ""
+        marca = v.get("marca") or ""
+        if marca:
+            p["marcas"].add(marca)
+
+    # 2. Agrupar pedidos por cliente
+    clientes = defaultdict(list)
+    for p in pedidos.values():
+        if p["rev"]:
+            clientes[p["rev"]].append(p)
+
+    # 3. Creditar cada cliente ao vendedor do 1º pedido
+    agg = defaultdict(lambda: {"ativos": 0, "multi": 0, "mono": 0,
+                               "first": 0, "built": 0, "pontos": 0.0})
+    for peds in clientes.values():
+        peds.sort(key=lambda x: x["ordem"])
+        primeiro = peds[0]
+        vend = primeiro["vend"] or "?"
+        marcas_tot = set()
+        for p in peds:
+            marcas_tot |= p["marcas"]
+        is_multi = len(marcas_tot) >= 2
+        first_multi = len(primeiro["marcas"]) >= 2
+        m = agg[vend]
+        m["ativos"] += 1
+        if is_multi:
+            m["multi"] += 1
+            m["pontos"] += (1.0 + bonus_primeiro) if first_multi else 1.0
+            if first_multi:
+                m["first"] += 1
+            else:
+                m["built"] += 1
+        else:
+            m["mono"] += 1
+
+    for m in agg.values():
+        m["pct"] = min(teto, m["pontos"] / m["ativos"] * 100) if m["ativos"] else 0.0
+    return agg
+
+
 # ─── Rotas ────────────────────────────────────────────────────────────────────
 
 @app.route("/ping", methods=["GET", "HEAD"])
@@ -1118,7 +1184,6 @@ def vendedores():
         "total": 0.0, "pedidos": set(), "quantidade": 0,
         "iaf_cabelos": 0.0, "iaf_make": 0.0, "geral": 0.0,
         "marcas": defaultdict(float),
-        "pedidos_marcas": defaultdict(set),
     })
 
     for v in vendas:
@@ -1142,8 +1207,6 @@ def vendedores():
         marca = v.get("marca") or ""
         if marca:
             m["marcas"][marca] += total
-        if ped and marca:
-            m["pedidos_marcas"][ped].add(marca)
 
     # Retenção: calculada de TODOS os dados (sem filtro), pois é indicador histórico
     ret_dados = defaultdict(lambda: defaultdict(set))  # vend_cod -> rev_cod -> set(ciclos)
@@ -1158,6 +1221,9 @@ def vendedores():
 
     total_pedidos_geral = sum(len(m["pedidos"]) for m in metricas.values())
 
+    # Multimarca por CLIENTE (revendedor), creditado ao vendedor do 1º pedido
+    mm = _multimarca_por_cliente(vendas)
+
     resultado = []
     for cod, m in metricas.items():
         total = m["total"]
@@ -1167,11 +1233,11 @@ def vendedores():
         qtd_revendedores = len(rev_ciclos)
         qtd_retidos = sum(1 for cs in rev_ciclos.values() if len(cs) > 1)
 
-        # Pedidos multi/monomarca (apenas pedidos com pelo menos 1 marca identificada)
-        pedidos_com_marca = {ped: marcas for ped, marcas in m["pedidos_marcas"].items() if marcas}
-        qtd_multimarca = sum(1 for marcas in pedidos_com_marca.values() if len(marcas) >= 2)
-        qtd_monomarca  = sum(1 for marcas in pedidos_com_marca.values() if len(marcas) == 1)
-        base_marca = len(pedidos_com_marca)
+        # Clientes multi/monomarca (regra por cliente, com bônus de 1º pedido)
+        mmv = mm.get(cod, {})
+        qtd_multimarca = mmv.get("multi", 0)
+        qtd_monomarca  = mmv.get("mono", 0)
+        base_marca     = mmv.get("ativos", 0)
 
         resultado.append({
             "codigo": cod,
@@ -1191,7 +1257,7 @@ def vendedores():
             "pct_retencao": (qtd_retidos / qtd_revendedores * 100) if qtd_revendedores else 0,
             "qtd_pedidos_multimarca": qtd_multimarca,
             "qtd_pedidos_monomarca": qtd_monomarca,
-            "pct_pedidos_multimarca": (qtd_multimarca / base_marca * 100) if base_marca else 0,
+            "pct_pedidos_multimarca": mmv.get("pct", 0),
             "pct_pedidos_monomarca": (qtd_monomarca / base_marca * 100) if base_marca else 0,
         })
 
@@ -1636,7 +1702,6 @@ def metas():
 
     metricas = defaultdict(lambda: {
         "nome": "", "codigo": "",
-        "pedidos_marcas": defaultdict(set),
         "rev_total": set(),
         "rev_cabelos": set(),
         "rev_make": set(),
@@ -1647,10 +1712,6 @@ def metas():
         m = metricas[cod]
         m["nome"] = v.get("Vendedor") or cod
         m["codigo"] = cod
-        ped = v.get("CodigoPedido")
-        marca = v.get("marca") or ""
-        if ped and marca:
-            m["pedidos_marcas"][ped].add(marca)
         cod_rev = v.get("CodigoRevendedor") or v.get("Revendedor") or "?"
         m["rev_total"].add(cod_rev)
         clf = v.get("classificacao_iaf")
@@ -1659,12 +1720,12 @@ def metas():
         elif clf == "IAF Make":
             m["rev_make"].add(cod_rev)
 
+    # Multimarca por CLIENTE (revendedor), creditado ao vendedor do 1º pedido
+    mm = _multimarca_por_cliente(vendas)
+
     resultado = []
     for cod, m in metricas.items():
-        pedidos_com_marca = {ped: marcas for ped, marcas in m["pedidos_marcas"].items() if marcas}
-        qtd_multimarca = sum(1 for marcas in pedidos_com_marca.values() if len(marcas) >= 2)
-        base_marca = len(pedidos_com_marca)
-        pct_multimarca = (qtd_multimarca / base_marca * 100) if base_marca else 0
+        pct_multimarca = mm.get(cod, {}).get("pct", 0)
 
         rev_total = len(m["rev_total"])
         pct_cabelos = (len(m["rev_cabelos"]) / rev_total * 100) if rev_total else 0
