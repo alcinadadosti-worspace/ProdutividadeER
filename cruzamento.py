@@ -25,7 +25,7 @@ EXCLUSOES_MAKE = (
     "SPLASH", "PARFUMEE", "PERFUM",
     # Corpo
     "BODY SPRAY", "BODY SPLASH", "BODY MIST",
-    "CORPORAL", "LOC HID", "CR HID CPO",
+    "CORPORAL", "LOC HID", "HID CPO",
     # Capilar
     "CABELO", "SHAMP", "COND", "MASCARA CAPILAR",
     "OLEO CAPILAR", "LEAVE", "CREME PENT",
@@ -48,8 +48,8 @@ INDICADORES_MAKE = (
     # Olhos
     "SOMBRA", "PALETA SOMBRA", "RIMEL", "MASCARA CILIOS",
     "DELINEADOR", "LAP OLHO", "LAP SOBR",
-    # Boca
-    "GLOSS", "LABIAL", "LAP BOCA",
+    # Boca ("GLOS" cobre GLOS/GLOSS/LIP GLOSS/GLOS LAB; "HID LAB" = hidratante labial)
+    "GLOS", "LABIAL", "LAP BOCA", "HID LAB",
     # Rosto
     "BLUSH", "BRONZER", "ILUMINADOR", "PRIMER", "CORRETIVO",
     "PO COMPACTO", "PO FACIAL", "CONTORNO",
@@ -57,7 +57,8 @@ INDICADORES_MAKE = (
     # Linhas
     "MAKE B ", "EUD MAKE",
     "NIINA SECRETS GLOSS", "NIINA SECRETS BAT", "NIINA SECRETS SOMBRA",
-    "QDB BAT", "QDB GLOSS", "QDB SOMBRA", "QDB BASE", "QDB BLUSH",
+    "NIINA SCR BAT", "NIINA SCR GLOS", "NIINA SCR SOMBRA",
+    "QDB BAT", "QDB GLOS", "QDB SOMBRA", "QDB BASE", "QDB BLUSH",
 )
 
 # ─── Categorias de produto ────────────────────────────────────────────────────
