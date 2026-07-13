@@ -1878,5 +1878,25 @@
   "89830": {
     "nome": "PMPCK MALBEC V3",
     "marca": "oBoticário"
+  },
+  "89095": {
+    "nome": "EUD MAKE GL/LAB MICR/INJ PNK/EXTR 5,2ml",
+    "marca": "Eudora"
+  },
+  "89096": {
+    "nome": "EUD MAKE GLOSS LAB MICR/INJ ROSE 5,2ml",
+    "marca": "Eudora"
+  },
+  "89097": {
+    "nome": "EUD MAKE GLOSS LAB MICR/INJ BROWN 5,2ml",
+    "marca": "Eudora"
+  },
+  "89098": {
+    "nome": "EUD MAKE GLOSS LAB MICR/INJ CHERRY 5,2ml",
+    "marca": "Eudora"
+  },
+  "94210": {
+    "nome": "EUD MAKE GLOSS LAB MICR/INJ FUCCIA 5,2ml",
+    "marca": "Eudora"
   }
 }
