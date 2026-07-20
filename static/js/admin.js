@@ -157,7 +157,7 @@ function _renderAdminPainel() {
 
   _renderMetasCards();
   _renderFormAdd();
-  _renderTabelaVendedores();
+  _renderTabelaCadastro();
   lucide.createIcons();
 }
 
@@ -282,7 +282,10 @@ function _renderFormAdd() {
 }
 
 // ─── Tabela de vendedores ───────────────────────────────────────────────────
-function _renderTabelaVendedores() {
+// Nome com sufixo "Cadastro" de propósito: todos os scripts da SPA dividem o
+// mesmo escopo global, e vendedores.js já tem uma _renderTabelaVendedores.
+// Repetir o nome aqui sobrescreveria a de lá e quebraria a aba Vendedores.
+function _renderTabelaCadastro() {
   const wrap = document.getElementById("admin-tabela");
   const lista = _admin.vendedores || [];
   document.getElementById("admin-qtd").textContent =

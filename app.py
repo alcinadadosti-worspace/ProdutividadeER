@@ -228,7 +228,14 @@ def _gh_salvar_vendedores(cadastro):
         if sha:
             body["sha"] = sha
 
-        _gh_request("PUT", _GH_FILE_VENDEDORES, body)
+        resp = _gh_request("PUT", _GH_FILE_VENDEDORES, body)
+        if resp is None:
+            # _gh_request converte 404 em None. Num GET isso quer dizer "arquivo
+            # ainda nao existe", mas num PUT significa token sem permissao de
+            # escrita — o GitHub responde 404 para nao revelar se o repo existe.
+            # Tratar como sucesso perderia a alteracao silenciosamente.
+            return False, ("GitHub respondeu 404 ao gravar — o GITHUB_TOKEN "
+                           "provavelmente não tem permissão de escrita neste repositório.")
         qtd = len(cadastro.get("vendedores", []))
         app.logger.info(f"[GitHub] vendedores.json atualizado ({qtd} vendedores)")
         return True, None
@@ -492,7 +499,11 @@ def _persistir_cadastro():
         return "Alteração salva apenas no disco local (GITHUB_TOKEN não configurado) — pode se perder no próximo deploy."
     ok, erro = _gh_salvar_vendedores(_CADASTRO)
     if not ok:
-        return f"Alteração salva localmente, mas falhou ao gravar no GitHub: {erro}"
+        # Nao adianta dizer "salva localmente": no proximo restart o
+        # _sincronizar_cadastro_github() baixa o GitHub por cima do disco, entao
+        # a alteracao seria desfeita sem ninguem perceber. Melhor avisar direito.
+        return (f"NÃO foi possível gravar no GitHub ({erro}). A alteração vale só "
+                f"até o servidor reiniciar — depois ela é desfeita. Tente de novo.")
     return None
 
 
@@ -580,8 +591,49 @@ def secrets_compare(a, b):
     return _secrets_mod.compare_digest(str(a), str(b))
 
 
+# O escopo do admin NAO pode viver dentro do cookie. O cookie de sessao do Flask
+# e apenas assinado (nao criptografado) com a SECRET_KEY, que tem um fallback
+# versionado neste arquivo — quem le o repositorio conseguiria assinar um cookie
+# com {"admin_escopo": "*"} e apagar vendedores sem saber senha nenhuma.
+# Por isso o cookie carrega so um token aleatorio e o escopo fica aqui no
+# servidor. Reiniciar o app derruba os logins (o Render roda 1 worker, entao o
+# dicionario e unico); e um preco baixo perto de deixar o escopo forjavel.
+_ADMIN_SESSOES = {}                  # token -> (escopo, expira_em)
+_ADMIN_SESSOES_LOCK = threading.Lock()
+_ADMIN_SESSAO_HORAS = 12
+
+
+def _abrir_sessao_admin(escopo):
+    token = _secrets_mod.token_urlsafe(32)
+    with _ADMIN_SESSOES_LOCK:
+        agora = datetime.now()
+        for t, (_, exp) in list(_ADMIN_SESSOES.items()):
+            if exp <= agora:
+                _ADMIN_SESSOES.pop(t, None)
+        _ADMIN_SESSOES[token] = (escopo, agora + timedelta(hours=_ADMIN_SESSAO_HORAS))
+    return token
+
+
+def _fechar_sessao_admin():
+    token = session.pop("admin_token", None)
+    if token:
+        with _ADMIN_SESSOES_LOCK:
+            _ADMIN_SESSOES.pop(token, None)
+
+
 def _escopo_atual():
-    return session.get("admin_escopo") or None
+    token = session.get("admin_token")
+    if not token:
+        return None
+    with _ADMIN_SESSOES_LOCK:
+        dados = _ADMIN_SESSOES.get(token)
+        if not dados:
+            return None
+        escopo, expira = dados
+        if expira <= datetime.now():
+            _ADMIN_SESSOES.pop(token, None)
+            return None
+    return escopo
 
 
 def _unidades_do_escopo(escopo):
@@ -1990,7 +2042,10 @@ def metas():
     for cod, m in metricas.items():
         vend = _buscar_vendedor(m["nome"])
         if not vend:
-            nao_cadastrados.append(m["nome"])
+            # "?" e o balde das vendas sem vendedor nem usuario de criacao —
+            # nao e uma pessoa, entao nao entra no aviso de "falta cadastrar".
+            if m["nome"] and m["nome"] != "?":
+                nao_cadastrados.append(m["nome"])
             continue
         com_vendas.add(_norm_nome(vend["nome"]))
 
@@ -2074,7 +2129,8 @@ def admin_login():
     escopo = _escopo_da_senha(body.get("senha"))
     if not escopo:
         return jsonify({"erro": "Senha incorreta."}), 401
-    session["admin_escopo"] = escopo
+    _fechar_sessao_admin()                      # descarta um login anterior
+    session["admin_token"] = _abrir_sessao_admin(escopo)
     session.permanent = True
     app.logger.info(f"[Admin] Login no escopo: {escopo}")
     return jsonify({"escopo": escopo, "unidades": _unidades_do_escopo(escopo)})
@@ -2082,7 +2138,7 @@ def admin_login():
 
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout():
-    session.pop("admin_escopo", None)
+    _fechar_sessao_admin()
     return jsonify({"ok": True})
 
 
