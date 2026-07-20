@@ -2,21 +2,8 @@
  * metas.js — Aba de Metas por Vendedor
  */
 
-// Mapa de nome do vendedor (normalizado: maiúsculas sem acento) → ID Slack
-const SLACK_USER_MAP = {
-  "MARILIA ALICE DOS SANTOS SILVA":        "U0AKMRS669L",
-  "YASMIM DA ROCHA BEZERRA BARBOSA":       "U08F8T8SMNE",
-  "MARIA VICTORIA SOUZA ARAUJO FERRO":     "U08EZUH7X1C",
-  "VALESCA MEIRELLE BEZERRA VITORIO":      "U087M7GCNMC",
-  "ANE CAROLINE PEREIRA MARTER":           "U0A2PUWCUKS",
-  "AMANDA DE ARAUJO SANTOS":               "U0BGA5QHHLJ",
-  "AUDA DA CONCEICAO SANTOS":              "U0BG84A7VF0",
-};
-
-function _slackId(nome) {
-  const key = (nome || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
-  return SLACK_USER_MAP[key] || null;
-}
+// O Slack ID e as metas de cada vendedor vêm do cadastro (aba Admin → vendedores.json),
+// entregues junto com os dados em /api/metas.
 
 let _metasData = null;
 let _metasSort = { col: "nome", asc: true };
@@ -63,6 +50,18 @@ function _renderMetasPage(d) {
     </div>
   ` : "";
 
+  // A lista mostra só quem está no cadastro (aba Admin). Se a planilha traz
+  // vendedores fora dele, avisa — senão o número some sem explicação.
+  const foraDoCadastro = d.nao_cadastrados || [];
+  const alertaCadastro = foraDoCadastro.length ? `
+    <div class="metas-alerta metas-alerta-info">
+      <i data-lucide="user-x" style="width:15px;height:15px;flex-shrink:0"></i>
+      <span><strong>${foraDoCadastro.length}</strong> ${foraDoCadastro.length === 1 ? "pessoa aparece" : "pessoas aparecem"} na planilha sem cadastro e ${foraDoCadastro.length === 1 ? "ficou" : "ficaram"} de fora desta lista:
+      ${foraDoCadastro.slice(0, 6).join(", ")}${foraDoCadastro.length > 6 ? ` e mais ${foraDoCadastro.length - 6}` : ""}.
+      Cadastre na aba <strong>Admin</strong> se ${foraDoCadastro.length === 1 ? "for vendedor(a)" : "forem vendedores"}.</span>
+    </div>
+  ` : "";
+
   page.innerHTML = `
     <div class="page-header">
       <div class="page-title">Metas por Vendedor</div>
@@ -70,12 +69,13 @@ function _renderMetasPage(d) {
     </div>
 
     ${alertaCiclo}
+    ${alertaCadastro}
 
     <!-- Cards de resumo -->
     <div class="metas-summary-grid">
-      ${_cardMeta("Multimarca", metas.multimarca, qtdMult, totalVend, "#4ADE80", "shopping-bag")}
-      ${_cardMeta("IAF Cabelos", metas.iaf_cabelos, qtdCab, totalVend, "var(--accent-blue)", "droplets")}
-      ${_cardMeta("IAF Make", metas.iaf_make, qtdMake, totalVend, "var(--accent-purple)", "sparkles")}
+      ${_cardMeta("Multimarca", metas.multimarca, qtdMult, totalVend, "#4ADE80", "shopping-bag", _metaVaria(vendedores, "multimarca", metas))}
+      ${_cardMeta("IAF Cabelos", metas.iaf_cabelos, qtdCab, totalVend, "var(--accent-blue)", "droplets", _metaVaria(vendedores, "iaf_cabelos", metas))}
+      ${_cardMeta("IAF Make", metas.iaf_make, qtdMake, totalVend, "var(--accent-purple)", "sparkles", _metaVaria(vendedores, "iaf_make", metas))}
     </div>
 
     <!-- Tabela -->
@@ -127,17 +127,18 @@ async function _enviarParaTodos(vendedores, metas) {
 
   let enviados = 0, erros = 0, sem_id = 0;
   for (const v of vendedores) {
-    const slackId = _slackId(v.nome);
+    const slackId = v.slack_id;
     if (!slackId) { sem_id++; continue; }
+    const mv = v.metas || metas;
     const payload = {
       slack_user_id:    slackId,
       vendedor_nome:    v.nome,
       pct_multimarca:   v.pct_multimarca,
       pct_iaf_cabelos:  v.pct_iaf_cabelos,
       pct_iaf_make:     v.pct_iaf_make,
-      meta_multimarca:  metas.multimarca,
-      meta_iaf_cabelos: metas.iaf_cabelos,
-      meta_iaf_make:    metas.iaf_make,
+      meta_multimarca:  mv.multimarca,
+      meta_iaf_cabelos: mv.iaf_cabelos,
+      meta_iaf_make:    mv.iaf_make,
     };
     try {
       const res = await fetch("/api/slack/enviar", {
@@ -176,14 +177,22 @@ async function _enviarParaTodos(vendedores, metas) {
   lucide.createIcons();
 }
 
-function _cardMeta(titulo, meta, qtdAcima, total, cor, icone) {
+/** true se algum vendedor tem meta diferente da global (override de unidade ou individual). */
+function _metaVaria(vendedores, campo, metasGlobais) {
+  return vendedores.some(v => v.metas && v.metas[campo] !== metasGlobais[campo]);
+}
+
+function _cardMeta(titulo, meta, qtdAcima, total, cor, icone, varia = false) {
   const pct = total ? (qtdAcima / total * 100) : 0;
+  const rotuloMeta = varia
+    ? `Meta: ${meta}% <span class="metas-card-varia" title="Alguns vendedores têm meta própria, definida na aba Admin">· varia</span>`
+    : `Meta: ${meta}%`;
   return `
     <div class="metas-card">
       <div class="metas-card-header">
         <i data-lucide="${icone}" style="color:${cor}"></i>
         <span class="metas-card-title">${titulo}</span>
-        <span class="metas-card-meta">Meta: ${meta}%</span>
+        <span class="metas-card-meta">${rotuloMeta}</span>
       </div>
       <div class="metas-card-value" style="color:${cor}">${qtdAcima}<span class="metas-card-denom"> / ${total}</span></div>
       <div class="metas-card-sub">vendedores atingiram a meta</div>
@@ -222,16 +231,17 @@ function _renderTabelaMetas(lista, metas) {
   const rows = sorted.map(v => {
     const metas_count = (v.atingiu_multimarca ? 1 : 0) + (v.atingiu_cabelos ? 1 : 0) + (v.atingiu_make ? 1 : 0);
     const tagCor = metas_count === 3 ? "#4ADE80" : metas_count === 2 ? "#FCD34D" : metas_count === 1 ? "#FB923C" : "#F87171";
-    const slackId = _slackId(v.nome);
+    const slackId = v.slack_id;
+    const mv = v.metas || metas;
     const vData = encodeURIComponent(JSON.stringify({
       slack_user_id:   slackId,
       vendedor_nome:   v.nome,
       pct_multimarca:  v.pct_multimarca,
       pct_iaf_cabelos: v.pct_iaf_cabelos,
       pct_iaf_make:    v.pct_iaf_make,
-      meta_multimarca:  metas.multimarca,
-      meta_iaf_cabelos: metas.iaf_cabelos,
-      meta_iaf_make:    metas.iaf_make,
+      meta_multimarca:  mv.multimarca,
+      meta_iaf_cabelos: mv.iaf_cabelos,
+      meta_iaf_make:    mv.iaf_make,
     }));
     return `
       <tr>
@@ -249,9 +259,9 @@ function _renderTabelaMetas(lista, metas) {
         <td style="text-align:center">
           <span style="background:${tagCor}22;color:${tagCor};border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">${metas_count}/3</span>
         </td>
-        <td style="min-width:160px">${_barMeta(v.pct_multimarca, metas.multimarca, "#4ADE80")}</td>
-        <td style="min-width:160px">${_barMeta(v.pct_iaf_cabelos, metas.iaf_cabelos, "var(--accent-blue)")}</td>
-        <td style="min-width:160px">${_barMeta(v.pct_iaf_make, metas.iaf_make, "var(--accent-purple)")}</td>
+        <td style="min-width:160px">${_barMeta(v.pct_multimarca, mv.multimarca, "#4ADE80")}</td>
+        <td style="min-width:160px">${_barMeta(v.pct_iaf_cabelos, mv.iaf_cabelos, "var(--accent-blue)")}</td>
+        <td style="min-width:160px">${_barMeta(v.pct_iaf_make, mv.iaf_make, "var(--accent-purple)")}</td>
       </tr>
     `;
   }).join("");
@@ -342,16 +352,17 @@ function _barMeta(valor, meta, cor) {
 }
 
 function _exportarMetasCSV(lista, metas) {
-  const header = ["Vendedor", "Código", "% Multimarca", `Meta Multimarca (${metas.multimarca}%)`, "Atingiu Multimarca",
-    "IAF Cabelos %", `Meta Cabelos (${metas.iaf_cabelos}%)`, "Atingiu Cabelos",
-    "IAF Make %", `Meta Make (${metas.iaf_make}%)`, "Atingiu Make", "Metas Atingidas"];
+  const header = ["Vendedor", "Código", "Unidade", "% Multimarca", "Meta Multimarca", "Atingiu Multimarca",
+    "IAF Cabelos %", "Meta Cabelos", "Atingiu Cabelos",
+    "IAF Make %", "Meta Make", "Atingiu Make", "Metas Atingidas"];
   const rows = lista.map(v => {
     const cnt = (v.atingiu_multimarca ? 1 : 0) + (v.atingiu_cabelos ? 1 : 0) + (v.atingiu_make ? 1 : 0);
+    const mv = v.metas || metas;
     return [
-      v.nome, v.codigo,
-      v.pct_multimarca.toFixed(1), metas.multimarca, v.atingiu_multimarca ? "Sim" : "Não",
-      v.pct_iaf_cabelos.toFixed(1), metas.iaf_cabelos, v.atingiu_cabelos ? "Sim" : "Não",
-      v.pct_iaf_make.toFixed(1), metas.iaf_make, v.atingiu_make ? "Sim" : "Não",
+      v.nome, v.codigo, v.unidade || "",
+      v.pct_multimarca.toFixed(1), mv.multimarca, v.atingiu_multimarca ? "Sim" : "Não",
+      v.pct_iaf_cabelos.toFixed(1), mv.iaf_cabelos, v.atingiu_cabelos ? "Sim" : "Não",
+      v.pct_iaf_make.toFixed(1), mv.iaf_make, v.atingiu_make ? "Sim" : "Não",
       cnt + "/3",
     ].join(",");
   });

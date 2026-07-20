@@ -1,0 +1,52 @@
+{
+  "metas_globais": {
+    "multimarca": 72.0,
+    "iaf_cabelos": 37.0,
+    "iaf_make": 38.0
+  },
+  "metas_unidade": {},
+  "vendedores": [
+    {
+      "nome": "MARIA VICTORIA SOUZA ARAUJO FERRO",
+      "slack_id": "U08EZUH7X1C",
+      "unidade": "Filial Palmeira dos Índios",
+      "metas": {}
+    },
+    {
+      "nome": "MARILIA ALICE DOS SANTOS SILVA",
+      "slack_id": "U0AKMRS669L",
+      "unidade": "Filial Palmeira dos Índios",
+      "metas": {}
+    },
+    {
+      "nome": "VALESCA MEIRELLE BEZERRA VITORIO",
+      "slack_id": "U087M7GCNMC",
+      "unidade": "Filial Palmeira dos Índios",
+      "metas": {}
+    },
+    {
+      "nome": "YASMIM DA ROCHA BEZERRA BARBOSA",
+      "slack_id": "U08F8T8SMNE",
+      "unidade": "Filial Palmeira dos Índios",
+      "metas": {}
+    },
+    {
+      "nome": "AMANDA DE ARAUJO SANTOS",
+      "slack_id": "U0BGA5QHHLJ",
+      "unidade": "Matriz Penedo",
+      "metas": {}
+    },
+    {
+      "nome": "ANE CAROLINE PEREIRA MARTER",
+      "slack_id": "U0A2PUWCUKS",
+      "unidade": "Matriz Penedo",
+      "metas": {}
+    },
+    {
+      "nome": "AUDA DA CONCEICAO SANTOS",
+      "slack_id": "U0BG84A7VF0",
+      "unidade": "Matriz Penedo",
+      "metas": {}
+    }
+  ]
+}

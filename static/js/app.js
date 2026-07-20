@@ -23,6 +23,7 @@ const PAGINAS = {
   metas:         { render: renderMetas,         semDados: false },
   dados:         { render: renderDados,         semDados: false },
   cancelados:    { render: renderCancelados,    semDados: true  },
+  admin:         { render: renderAdmin,         semDados: true  },
 };
 
 let _paginaAtual = null;

@@ -10,6 +10,7 @@ import csv
 import json
 import sqlite3
 import base64
+import hashlib
 import threading
 import unicodedata
 import urllib.request
@@ -25,22 +26,9 @@ def _norm_nome(s):
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-# Vendedores oficiais reconhecidos pelo grupo. Usado apenas para o KPI
-# "Pedidos com Vendedor" no dashboard — outras areas continuam considerando
-# qualquer Codigo Vendedor preenchido.
-VENDEDORES_OFICIAIS = {
-    _norm_nome(n) for n in [
-        # Filial Palmeira dos Indios
-        "YASMIM DA ROCHA BEZERRA BARBOSA",
-        "MARILIA ALICE DOS SANTOS SILVA",
-        "MARIA VICTORIA SOUZA ARAUJO FERRO",
-        "VALESCA MEIRELLE BEZERRA VITORIO",
-        # Matriz Penedo
-        "ANE CAROLINE PEREIRA MARTER",
-        "AMANDA DE ARAUJO SANTOS",
-        "AUDA DA CONCEICAO SANTOS",
-    ]
-}
+# Os vendedores oficiais do grupo vivem em vendedores.json e sao gerenciados
+# pela aba Admin (ver _CADASTRO mais abaixo). Usado no KPI "Pedidos com
+# Vendedor" do dashboard e para filtrar a aba Metas.
 
 # Carrega variáveis do .env se existir (sem dependência externa)
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -65,6 +53,7 @@ BASE_DIR        = os.path.dirname(__file__)
 DB_PATH         = os.path.join(BASE_DIR, "produtos.db")
 STATE_FILE      = os.path.join(BASE_DIR, "_state.json")
 CANCELADOS_FILE = os.path.join(BASE_DIR, "cancelados.json")
+VENDEDORES_FILE = os.path.join(BASE_DIR, "vendedores.json")
 
 # ─── GitHub — persistência permanente de arquivos de estado ──────────────────
 # marcas_catalog.json e cancelados.json sobrevivem a deploys do Render gravando
@@ -74,6 +63,7 @@ _GH_REPO           = os.environ.get("GITHUB_REPO", "alcinadadosti-worspace/Produ
 _GH_BRANCH         = os.environ.get("GITHUB_BRANCH", "master")
 _GH_FILE_MARCAS    = "marcas_catalog.json"
 _GH_FILE_CANCELADOS = "cancelados.json"
+_GH_FILE_VENDEDORES = "vendedores.json"
 
 
 def _gh_ok():
@@ -200,6 +190,55 @@ def _gh_salvar_cancelados(codigos_set):
         return False, msg
     except Exception as e:
         app.logger.warning(f"[GitHub] Erro ao salvar cancelados: {e}")
+        return False, str(e)
+
+
+def _gh_ler_vendedores():
+    """Lê vendedores.json do GitHub. Retorna dict ou None se não existir."""
+    if not _gh_ok():
+        return None
+    try:
+        resp = _gh_request("GET", _GH_FILE_VENDEDORES)
+        if not resp:
+            return None
+        conteudo = base64.b64decode(resp["content"]).decode("utf-8")
+        data = json.loads(conteudo)
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        app.logger.warning(f"[GitHub] Erro ao ler vendedores: {e}")
+        return None
+
+
+def _gh_salvar_vendedores(cadastro):
+    """Salva vendedores.json no GitHub. Retorna (ok, erro)."""
+    if not _gh_ok():
+        return False, "GITHUB_TOKEN não configurado"
+    try:
+        conteudo = json.dumps(cadastro, ensure_ascii=False, indent=2)
+        encoded  = base64.b64encode(conteudo.encode("utf-8")).decode()
+
+        atual = _gh_request("GET", _GH_FILE_VENDEDORES)
+        sha   = atual["sha"] if atual else None
+
+        body = {
+            "message": "chore: atualizar cadastro de vendedores/metas [auto]",
+            "content": encoded,
+            "branch": _GH_BRANCH,
+        }
+        if sha:
+            body["sha"] = sha
+
+        _gh_request("PUT", _GH_FILE_VENDEDORES, body)
+        qtd = len(cadastro.get("vendedores", []))
+        app.logger.info(f"[GitHub] vendedores.json atualizado ({qtd} vendedores)")
+        return True, None
+    except urllib.error.HTTPError as e:
+        corpo = e.read().decode("utf-8", errors="replace")
+        msg = f"HTTP {e.code}: {corpo}"
+        app.logger.warning(f"[GitHub] Erro ao salvar vendedores: {msg}")
+        return False, msg
+    except Exception as e:
+        app.logger.warning(f"[GitHub] Erro ao salvar vendedores: {e}")
         return False, str(e)
 
 
@@ -335,6 +374,222 @@ def _eh_cancelado(venda):
 # em ambientes efêmeros como o Render).
 _carregar_cancelados_disco()
 _sincronizar_cancelados_github()
+
+
+# ─── Cadastro de vendedores e metas ───────────────────────────────────────────
+# vendedores.json guarda o time oficial e as metas em tres niveis:
+#   metas_globais            → valem para todo mundo
+#   metas_unidade[unidade]   → sobrescrevem a global para aquela unidade
+#   vendedores[].metas       → sobrescrevem tudo para aquela pessoa
+# Cada nivel pode sobrescrever so um dos campos (ex.: so multimarca) — os
+# demais continuam herdados do nivel de cima.
+
+UNIDADES = ["Matriz Penedo", "Filial Palmeira dos Índios"]
+_METAS_CAMPOS = ("multimarca", "iaf_cabelos", "iaf_make")
+_METAS_PADRAO = {"multimarca": 72.0, "iaf_cabelos": 37.0, "iaf_make": 38.0}
+
+_CADASTRO_LOCK = threading.Lock()
+_CADASTRO: dict = {"metas_globais": dict(_METAS_PADRAO), "metas_unidade": {}, "vendedores": []}
+
+
+def _cadastro_normalizado(data):
+    """Valida/normaliza a estrutura lida do disco ou do GitHub."""
+    if not isinstance(data, dict):
+        return None
+    globais = dict(_METAS_PADRAO)
+    for k, v in (data.get("metas_globais") or {}).items():
+        if k in _METAS_CAMPOS and v is not None:
+            try:
+                globais[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+
+    por_unidade = {}
+    for un, metas in (data.get("metas_unidade") or {}).items():
+        limpo = {}
+        for k, v in (metas or {}).items():
+            if k in _METAS_CAMPOS and v is not None:
+                try:
+                    limpo[k] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        if limpo:
+            por_unidade[un] = limpo
+
+    vendedores = []
+    vistos = set()
+    for v in (data.get("vendedores") or []):
+        if not isinstance(v, dict):
+            continue
+        nome = (v.get("nome") or "").strip()
+        if not nome or _norm_nome(nome) in vistos:
+            continue
+        vistos.add(_norm_nome(nome))
+        metas = {}
+        for k, val in (v.get("metas") or {}).items():
+            if k in _METAS_CAMPOS and val is not None:
+                try:
+                    metas[k] = float(val)
+                except (TypeError, ValueError):
+                    pass
+        vendedores.append({
+            "nome": nome,
+            "slack_id": (v.get("slack_id") or "").strip().upper(),
+            "unidade": (v.get("unidade") or "").strip(),
+            "metas": metas,
+        })
+
+    return {"metas_globais": globais, "metas_unidade": por_unidade, "vendedores": vendedores}
+
+
+def _carregar_cadastro_disco():
+    """Lê vendedores.json do disco local. Tolerante a arquivo ausente."""
+    global _CADASTRO
+    try:
+        if os.path.exists(VENDEDORES_FILE):
+            with open(VENDEDORES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            limpo = _cadastro_normalizado(data)
+            if limpo:
+                _CADASTRO = limpo
+                app.logger.info(f"[Cadastro] {len(limpo['vendedores'])} vendedores carregados do disco")
+    except Exception as e:
+        app.logger.warning(f"[Cadastro] Erro ao carregar {VENDEDORES_FILE}: {e}")
+
+
+def _sincronizar_cadastro_github():
+    """Baixa vendedores.json do GitHub e adota como fonte de verdade.
+    Diferente dos cancelados (que fazem união), aqui o remoto substitui o local:
+    uma remoção de vendedor precisa se propagar, e mesclar traria de volta quem
+    foi removido em outra instância."""
+    global _CADASTRO
+    if not _gh_ok():
+        return
+    try:
+        remoto = _gh_ler_vendedores()
+        limpo = _cadastro_normalizado(remoto) if remoto else None
+        if not limpo:
+            return
+        _CADASTRO = limpo
+        _salvar_cadastro_disco()
+        app.logger.info(f"[Cadastro] Sincronizado com GitHub: {len(limpo['vendedores'])} vendedores")
+    except Exception as e:
+        app.logger.warning(f"[Cadastro] Erro na sincronização com GitHub: {e}")
+
+
+def _salvar_cadastro_disco():
+    try:
+        with open(VENDEDORES_FILE, "w", encoding="utf-8") as f:
+            json.dump(_CADASTRO, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        app.logger.error(f"[Cadastro] Erro ao salvar {VENDEDORES_FILE}: {e}")
+
+
+def _persistir_cadastro():
+    """Grava no disco e no GitHub. Retorna aviso (str) se o GitHub falhou."""
+    _salvar_cadastro_disco()
+    if not _gh_ok():
+        return "Alteração salva apenas no disco local (GITHUB_TOKEN não configurado) — pode se perder no próximo deploy."
+    ok, erro = _gh_salvar_vendedores(_CADASTRO)
+    if not ok:
+        return f"Alteração salva localmente, mas falhou ao gravar no GitHub: {erro}"
+    return None
+
+
+def _buscar_vendedor(nome):
+    alvo = _norm_nome(nome)
+    for v in _CADASTRO["vendedores"]:
+        if _norm_nome(v["nome"]) == alvo:
+            return v
+    return None
+
+
+def _vendedores_oficiais_norm():
+    """Set de nomes normalizados do time oficial (para KPIs e filtros)."""
+    return {_norm_nome(v["nome"]) for v in _CADASTRO["vendedores"]}
+
+
+def _metas_resolvidas(vend):
+    """Metas efetivas de um vendedor: global < unidade < individual."""
+    metas = dict(_METAS_PADRAO)
+    metas.update(_CADASTRO.get("metas_globais") or {})
+    unidade = (vend or {}).get("unidade") or ""
+    metas.update(_CADASTRO.get("metas_unidade", {}).get(unidade) or {})
+    metas.update((vend or {}).get("metas") or {})
+    return {k: float(metas.get(k, _METAS_PADRAO[k])) for k in _METAS_CAMPOS}
+
+
+def _metas_origem(vend):
+    """De qual nível veio cada meta — usado para mostrar 'herdado' na aba Admin."""
+    unidade = (vend or {}).get("unidade") or ""
+    da_unidade = _CADASTRO.get("metas_unidade", {}).get(unidade) or {}
+    individual = (vend or {}).get("metas") or {}
+    origem = {}
+    for k in _METAS_CAMPOS:
+        if k in individual:
+            origem[k] = "individual"
+        elif k in da_unidade:
+            origem[k] = "unidade"
+        else:
+            origem[k] = "global"
+    return origem
+
+
+_carregar_cadastro_disco()
+_sincronizar_cadastro_github()
+
+
+# ─── Autenticação da aba Admin ────────────────────────────────────────────────
+# Tres senhas, cada uma com um escopo: cada unidade gerencia so o proprio time,
+# e a senha geral enxerga as duas. As senhas nao ficam em texto puro no codigo
+# (o repo vai pro GitHub) — guardamos o SHA-256 com salt. Para trocar, defina
+# ADMIN_SENHA_GERAL / ADMIN_SENHA_PENEDO / ADMIN_SENHA_PALMEIRA no ambiente,
+# que tem precedencia sobre os hashes abaixo.
+
+ESCOPO_GERAL = "*"
+_ADMIN_SALT = "alcina-admin-v1|"
+_ADMIN_HASHES = {
+    ESCOPO_GERAL:                 "05f64fa7d9ba0b393a8de9ecf0614876912f199457aea60e1a8b3fe545860586",
+    "Matriz Penedo":              "29b4f52eecca90dc4e005eb7a2a585e973fcab864169a74a23a3ba6e8a2e6cb1",
+    "Filial Palmeira dos Índios": "67f5ea384e32af9a773beb8097577a9cf0c2e5962a3aa24e1e2104db21564851",
+}
+_ADMIN_ENV = {
+    ESCOPO_GERAL:                 "ADMIN_SENHA_GERAL",
+    "Matriz Penedo":              "ADMIN_SENHA_PENEDO",
+    "Filial Palmeira dos Índios": "ADMIN_SENHA_PALMEIRA",
+}
+
+
+def _escopo_da_senha(senha):
+    """Retorna o escopo correspondente à senha, ou None."""
+    senha = (senha or "").strip()
+    if not senha:
+        return None
+    digest = hashlib.sha256((_ADMIN_SALT + senha).encode("utf-8")).hexdigest()
+    for escopo, hash_padrao in _ADMIN_HASHES.items():
+        env_valor = os.environ.get(_ADMIN_ENV[escopo], "").strip()
+        if env_valor:
+            if secrets_compare(senha, env_valor):
+                return escopo
+        elif secrets_compare(digest, hash_padrao):
+            return escopo
+    return None
+
+
+def secrets_compare(a, b):
+    return _secrets_mod.compare_digest(str(a), str(b))
+
+
+def _escopo_atual():
+    return session.get("admin_escopo") or None
+
+
+def _unidades_do_escopo(escopo):
+    return list(UNIDADES) if escopo == ESCOPO_GERAL else [escopo]
+
+
+def _pode_gerenciar(escopo, unidade):
+    return bool(escopo) and (escopo == ESCOPO_GERAL or escopo == unidade)
 
 
 def _sid():
@@ -994,8 +1249,9 @@ def dashboard():
     total_faturado = sum(_safe_float(v["TotalPraticado"]) for v in vendas)
 
     # Pedidos contados por Nota Fiscal (uma nota = um pedido). Fallback para CodigoPedido se faltar.
-    # "Pedidos com Vendedor" considera APENAS a whitelist VENDEDORES_OFICIAIS — pedidos atribuidos
-    # a outros usuarios (gerentes, supervisores) nao entram nesse card.
+    # "Pedidos com Vendedor" considera APENAS o time cadastrado em vendedores.json —
+    # pedidos atribuidos a outros usuarios (gerentes, supervisores) nao entram nesse card.
+    oficiais        = _vendedores_oficiais_norm()
     notas_total     = set()
     notas_sem       = set()
     notas_oficiais  = set()
@@ -1008,7 +1264,7 @@ def dashboard():
         if v.get("sem_codigo_vendedor"):
             notas_sem.add(nf)
             fat_sem_vend += _safe_float(v["TotalPraticado"])
-        if _norm_nome(v.get("Vendedor")) in VENDEDORES_OFICIAIS:
+        if _norm_nome(v.get("Vendedor")) in oficiais:
             notas_oficiais.add(nf)
 
     pedidos_unicos    = len(notas_total)
@@ -1700,7 +1956,7 @@ def metas():
 
     vendas = _aplicar_filtros(g.est["vendas"], request.args)
 
-    METAS = {"multimarca": 72.0, "iaf_cabelos": 37.0, "iaf_make": 38.0}
+    METAS = _metas_resolvidas(None)   # metas globais, usadas nos cards de resumo
 
     metricas = defaultdict(lambda: {
         "nome": "", "codigo": "",
@@ -1725,33 +1981,303 @@ def metas():
     # Multimarca por CLIENTE (revendedor), creditado ao vendedor do 1º pedido
     mm = _multimarca_por_cliente(vendas)
 
+    # A aba Metas mostra apenas o time cadastrado — gerentes e supervisores que
+    # aparecem na planilha ficam de fora. Quem estiver na planilha sem cadastro
+    # volta em "nao_cadastrados" para o admin saber que falta cadastrar.
     resultado = []
+    nao_cadastrados = []
+    com_vendas = set()
     for cod, m in metricas.items():
+        vend = _buscar_vendedor(m["nome"])
+        if not vend:
+            nao_cadastrados.append(m["nome"])
+            continue
+        com_vendas.add(_norm_nome(vend["nome"]))
+
         pct_multimarca = mm.get(cod, {}).get("pct", 0)
 
         rev_total = len(m["rev_total"])
         pct_cabelos = (len(m["rev_cabelos"]) / rev_total * 100) if rev_total else 0
         pct_make = (len(m["rev_make"]) / rev_total * 100) if rev_total else 0
 
+        metas_v = _metas_resolvidas(vend)
         resultado.append({
             "codigo": cod,
             "nome": m["nome"],
+            "unidade": vend.get("unidade") or "",
+            "slack_id": vend.get("slack_id") or "",
+            "metas": metas_v,
             "pct_multimarca": round(pct_multimarca, 1),
             "pct_iaf_cabelos": round(pct_cabelos, 1),
             "pct_iaf_make": round(pct_make, 1),
-            "atingiu_multimarca": pct_multimarca >= METAS["multimarca"],
-            "atingiu_cabelos": pct_cabelos >= METAS["iaf_cabelos"],
-            "atingiu_make": pct_make >= METAS["iaf_make"],
+            "atingiu_multimarca": pct_multimarca >= metas_v["multimarca"],
+            "atingiu_cabelos": pct_cabelos >= metas_v["iaf_cabelos"],
+            "atingiu_make": pct_make >= metas_v["iaf_make"],
         })
 
+    sem_vendas = [
+        v["nome"] for v in _CADASTRO["vendedores"]
+        if _norm_nome(v["nome"]) not in com_vendas
+    ]
+
     resultado.sort(key=lambda x: x["nome"])
-    ciclos_no_filtro = sorted({v.get("Ciclo") or "" for v in vendas} - {""})
-    todos_ciclos     = sorted({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
+    todos_ciclos = sorted({v.get("Ciclo") or "" for v in g.est["vendas"]} - {""})
     return jsonify({
         "vendedores": resultado,
         "metas": METAS,
+        "nao_cadastrados": sorted(set(nao_cadastrados)),
+        "cadastrados_sem_vendas": sorted(sem_vendas),
         "qtd_ciclos_total": len(todos_ciclos),
         "ciclo_filtrado": request.args.get("ciclo", ""),
+    })
+
+
+# ─── Admin: cadastro de vendedores e metas ────────────────────────────────────
+
+def _parse_metas(body, campo="metas"):
+    """Lê metas do corpo da request. Valor null/"" significa herdar do nível de
+    cima (remove o override). Retorna (dict, erro)."""
+    bruto = body.get(campo)
+    if bruto is None:
+        return {}, None
+    if not isinstance(bruto, dict):
+        return None, "Campo 'metas' inválido."
+    metas = {}
+    for k, v in bruto.items():
+        if k not in _METAS_CAMPOS:
+            return None, f"Meta desconhecida: {k}"
+        if v is None or v == "":
+            metas[k] = None      # herdar
+            continue
+        try:
+            num = float(str(v).replace(",", "."))
+        except (TypeError, ValueError):
+            return None, f"Meta '{k}' precisa ser um número."
+        if not (0 <= num <= 100):
+            return None, f"Meta '{k}' precisa estar entre 0 e 100."
+        metas[k] = round(num, 1)
+    return metas, None
+
+
+def _aplicar_metas(destino, metas):
+    """Aplica overrides em um dict de metas — None remove o override (herda)."""
+    for k, v in metas.items():
+        if v is None:
+            destino.pop(k, None)
+        else:
+            destino[k] = v
+
+
+@app.route("/api/admin/login", methods=["POST"])
+def admin_login():
+    body = request.get_json(silent=True) or {}
+    escopo = _escopo_da_senha(body.get("senha"))
+    if not escopo:
+        return jsonify({"erro": "Senha incorreta."}), 401
+    session["admin_escopo"] = escopo
+    session.permanent = True
+    app.logger.info(f"[Admin] Login no escopo: {escopo}")
+    return jsonify({"escopo": escopo, "unidades": _unidades_do_escopo(escopo)})
+
+
+@app.route("/api/admin/logout", methods=["POST"])
+def admin_logout():
+    session.pop("admin_escopo", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/cadastro")
+def admin_cadastro():
+    """Cadastro visível para o escopo logado. Sem login, devolve escopo nulo
+    (a aba mostra a tela de senha)."""
+    escopo = _escopo_atual()
+    if not escopo:
+        return jsonify({"escopo": None, "unidades": UNIDADES})
+
+    unidades = _unidades_do_escopo(escopo)
+    vendedores = []
+    for v in _CADASTRO["vendedores"]:
+        if v.get("unidade") not in unidades and escopo != ESCOPO_GERAL:
+            continue
+        vendedores.append({
+            **v,
+            "metas_efetivas": _metas_resolvidas(v),
+            "metas_origem": _metas_origem(v),
+        })
+    vendedores.sort(key=lambda x: (x.get("unidade") or "", x["nome"]))
+
+    return jsonify({
+        "escopo": escopo,
+        "unidades": unidades,
+        "pode_meta_global": escopo == ESCOPO_GERAL,
+        "vendedores": vendedores,
+        "metas_globais": _metas_resolvidas(None),
+        "metas_unidade": {un: (_CADASTRO.get("metas_unidade", {}).get(un) or {}) for un in unidades},
+        "github_ativo": _gh_ok(),
+    })
+
+
+@app.route("/api/admin/vendedor", methods=["POST"])
+def admin_add_vendedor():
+    escopo = _escopo_atual()
+    if not escopo:
+        return jsonify({"erro": "Faça login na aba Admin."}), 403
+
+    body = request.get_json(silent=True) or {}
+    nome     = (body.get("nome") or "").strip()
+    slack_id = (body.get("slack_id") or "").strip().upper()
+    unidade  = (body.get("unidade") or "").strip()
+
+    if not nome:
+        return jsonify({"erro": "Informe o nome exatamente como aparece na planilha."}), 400
+    if not re.fullmatch(r"[UW][A-Z0-9]{6,}", slack_id):
+        return jsonify({"erro": "Slack ID inválido — deve começar com U e ter só letras/números (ex.: U0BGA5QHHLJ)."}), 400
+    if unidade not in UNIDADES:
+        return jsonify({"erro": "Unidade inválida."}), 400
+    if not _pode_gerenciar(escopo, unidade):
+        return jsonify({"erro": f"Sua senha só gerencia {escopo}."}), 403
+
+    metas, erro = _parse_metas(body)
+    if erro:
+        return jsonify({"erro": erro}), 400
+
+    with _CADASTRO_LOCK:
+        if _buscar_vendedor(nome):
+            return jsonify({"erro": f"{nome} já está cadastrado."}), 409
+        novo = {
+            "nome": nome,
+            "slack_id": slack_id,
+            "unidade": unidade,
+            "metas": {k: v for k, v in metas.items() if v is not None},
+        }
+        _CADASTRO["vendedores"].append(novo)
+        _CADASTRO["vendedores"].sort(key=lambda x: (x.get("unidade") or "", x["nome"]))
+        aviso = _persistir_cadastro()
+
+    app.logger.info(f"[Admin] Vendedor adicionado: {nome} ({unidade})")
+    return jsonify({"ok": True, "vendedor": novo, "aviso": aviso})
+
+
+@app.route("/api/admin/vendedor/remover", methods=["POST"])
+def admin_remover_vendedor():
+    escopo = _escopo_atual()
+    if not escopo:
+        return jsonify({"erro": "Faça login na aba Admin."}), 403
+
+    body = request.get_json(silent=True) or {}
+    nome = (body.get("nome") or "").strip()
+
+    with _CADASTRO_LOCK:
+        vend = _buscar_vendedor(nome)
+        if not vend:
+            return jsonify({"erro": f"{nome} não está cadastrado."}), 404
+        if not _pode_gerenciar(escopo, vend.get("unidade")):
+            return jsonify({"erro": f"Sua senha só gerencia {escopo}."}), 403
+        _CADASTRO["vendedores"] = [
+            v for v in _CADASTRO["vendedores"]
+            if _norm_nome(v["nome"]) != _norm_nome(nome)
+        ]
+        aviso = _persistir_cadastro()
+
+    app.logger.info(f"[Admin] Vendedor removido: {vend['nome']}")
+    return jsonify({"ok": True, "aviso": aviso})
+
+
+@app.route("/api/admin/vendedor/editar", methods=["POST"])
+def admin_editar_vendedor():
+    """Edita Slack ID, unidade e/ou metas individuais de um vendedor."""
+    escopo = _escopo_atual()
+    if not escopo:
+        return jsonify({"erro": "Faça login na aba Admin."}), 403
+
+    body = request.get_json(silent=True) or {}
+    nome = (body.get("nome") or "").strip()
+
+    with _CADASTRO_LOCK:
+        vend = _buscar_vendedor(nome)
+        if not vend:
+            return jsonify({"erro": f"{nome} não está cadastrado."}), 404
+        if not _pode_gerenciar(escopo, vend.get("unidade")):
+            return jsonify({"erro": f"Sua senha só gerencia {escopo}."}), 403
+
+        # Valida tudo ANTES de alterar: uma falha no meio deixaria o objeto em
+        # memória divergindo do que foi gravado no disco.
+        novo_slack = None
+        if "slack_id" in body:
+            novo_slack = (body.get("slack_id") or "").strip().upper()
+            if not re.fullmatch(r"[UW][A-Z0-9]{6,}", novo_slack):
+                return jsonify({"erro": "Slack ID inválido — deve começar com U (ex.: U0BGA5QHHLJ)."}), 400
+
+        nova_unidade = None
+        if "unidade" in body:
+            nova_unidade = (body.get("unidade") or "").strip()
+            if nova_unidade not in UNIDADES:
+                return jsonify({"erro": "Unidade inválida."}), 400
+            if not _pode_gerenciar(escopo, nova_unidade):
+                return jsonify({"erro": "Você não pode mover um vendedor para outra unidade."}), 403
+
+        novas_metas = None
+        if "metas" in body:
+            novas_metas, erro = _parse_metas(body)
+            if erro:
+                return jsonify({"erro": erro}), 400
+
+        if novo_slack is not None:
+            vend["slack_id"] = novo_slack
+        if nova_unidade is not None:
+            vend["unidade"] = nova_unidade
+        if novas_metas is not None:
+            _aplicar_metas(vend.setdefault("metas", {}), novas_metas)
+
+        aviso = _persistir_cadastro()
+        resposta = {**vend, "metas_efetivas": _metas_resolvidas(vend), "metas_origem": _metas_origem(vend)}
+
+    app.logger.info(f"[Admin] Vendedor editado: {vend['nome']}")
+    return jsonify({"ok": True, "vendedor": resposta, "aviso": aviso})
+
+
+@app.route("/api/admin/metas", methods=["POST"])
+def admin_salvar_metas():
+    """Salva metas globais (só escopo geral) ou de uma unidade."""
+    escopo = _escopo_atual()
+    if not escopo:
+        return jsonify({"erro": "Faça login na aba Admin."}), 403
+
+    body    = request.get_json(silent=True) or {}
+    nivel   = (body.get("nivel") or "").strip()
+    unidade = (body.get("unidade") or "").strip()
+
+    metas, erro = _parse_metas(body)
+    if erro:
+        return jsonify({"erro": erro}), 400
+
+    with _CADASTRO_LOCK:
+        if nivel == "global":
+            if escopo != ESCOPO_GERAL:
+                return jsonify({"erro": "Só a senha geral edita a meta global."}), 403
+            if any(v is None for v in metas.values()):
+                return jsonify({"erro": "A meta global não pode ficar vazia — ela é a base de todas."}), 400
+            _CADASTRO.setdefault("metas_globais", {}).update(metas)
+        elif nivel == "unidade":
+            if unidade not in UNIDADES:
+                return jsonify({"erro": "Unidade inválida."}), 400
+            if not _pode_gerenciar(escopo, unidade):
+                return jsonify({"erro": f"Sua senha só gerencia {escopo}."}), 403
+            alvo = _CADASTRO.setdefault("metas_unidade", {}).setdefault(unidade, {})
+            _aplicar_metas(alvo, metas)
+            if not alvo:
+                _CADASTRO["metas_unidade"].pop(unidade, None)
+        else:
+            return jsonify({"erro": "Nível inválido — use 'global' ou 'unidade'."}), 400
+
+        aviso = _persistir_cadastro()
+
+    app.logger.info(f"[Admin] Metas salvas (nível={nivel} unidade={unidade or '-'})")
+    return jsonify({
+        "ok": True,
+        "aviso": aviso,
+        "metas_globais": _metas_resolvidas(None),
+        "metas_unidade": _CADASTRO.get("metas_unidade", {}),
     })
 
 

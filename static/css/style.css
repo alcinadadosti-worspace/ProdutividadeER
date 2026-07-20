@@ -1442,3 +1442,241 @@ tbody td.secondary { color: var(--text-secondary); }
   font-size: 10px;
   letter-spacing: 0.05em;
 }
+
+/* ── Admin: cadastro de vendedores e metas ───────────────────────────────── */
+.metas-alerta-info {
+  background: rgba(108,158,255,0.08);
+  border-color: rgba(108,158,255,0.25);
+  color: var(--accent-blue);
+}
+
+.metas-card-varia {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  cursor: help;
+}
+
+/* Tela de senha */
+.admin-login {
+  display: flex;
+  justify-content: center;
+  padding-top: 48px;
+}
+
+.admin-login-box {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  text-align: center;
+}
+
+.admin-login-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--text-tertiary);
+  margin-bottom: 12px;
+}
+
+.admin-login-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.admin-login-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.admin-erro {
+  font-size: 12px;
+  color: var(--accent-red);
+  margin-bottom: 12px;
+}
+.admin-erro.hidden { display: none; }
+
+/* Inputs */
+.admin-input {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  margin-bottom: 12px;
+  transition: border-color var(--transition);
+}
+
+.admin-input::placeholder { color: var(--text-tertiary); }
+.admin-input:focus { border-color: var(--accent-blue); }
+
+.admin-input-sm {
+  padding: 5px 8px;
+  font-size: 12px;
+  margin-bottom: 0;
+}
+
+/* Cabeçalho com escopo */
+.admin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-escopo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-escopo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(74,222,128,0.12);
+  color: var(--accent-green);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.admin-escopo-badge svg { width: 13px; height: 13px; }
+
+/* Seções */
+.admin-secao { margin-bottom: 28px; }
+
+.admin-secao-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.admin-secao-titulo svg { width: 15px; height: 15px; color: var(--text-secondary); }
+
+.admin-secao-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+/* Cards de meta */
+.admin-metas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.admin-meta-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.admin-meta-card-titulo {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-meta-card-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  margin-bottom: 14px;
+}
+
+.admin-meta-campos {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.admin-meta-campo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.admin-meta-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.admin-meta-input-wrap .admin-input { padding-right: 22px; }
+
+.admin-meta-sufixo {
+  position: absolute;
+  right: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* Metas individuais destacadas na tabela */
+.adm-meta-custom {
+  border-color: rgba(167,139,250,0.45);
+  color: var(--accent-purple);
+}
+
+.admin-cel-texto { font-size: 12px; color: var(--text-secondary); }
+
+/* Formulário de adicionar */
+.admin-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.admin-form-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 180px;
+}
+
+.admin-form-campo-larga { flex: 1; min-width: 280px; }
+.admin-form-campo .admin-input { margin-bottom: 0; }
+.admin-form .btn-primary { margin-bottom: 1px; }
+
+.admin-acoes {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.admin-escopo .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.admin-escopo .btn-ghost svg { width: 13px; height: 13px; }
