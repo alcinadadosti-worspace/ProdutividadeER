@@ -407,6 +407,17 @@ async function _postAdmin(url, body, msgSucesso) {
       body: JSON.stringify(body),
     });
     const data = await res.json();
+    // Sessão caiu por inatividade: voltar para a tela de senha, senão o painel
+    // continua aberto e cada clique falha de novo sem explicar por quê. Vai
+    // pelo marcador "expirado", e não pelo 403, porque 403 também é o erro de
+    // permissão (senha de unidade no time da outra) — nesse a sessão está viva
+    // e derrubar o login seria só atrapalhar.
+    if (data.expirado) {
+      showToast("Sessão expirada por inatividade. Entre novamente.", "error");
+      _admin = null;
+      await renderAdmin();
+      return false;
+    }
     if (!res.ok) throw new Error(data.erro || "Erro ao salvar");
     showToast(msgSucesso, "success");
     if (data.aviso) showToast(data.aviso, "info");

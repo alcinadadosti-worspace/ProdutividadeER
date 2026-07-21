@@ -625,9 +625,16 @@ def secrets_compare(a, b):
 # Por isso o cookie carrega so um token aleatorio e o escopo fica aqui no
 # servidor. Reiniciar o app derruba os logins (o Render roda 1 worker, entao o
 # dicionario e unico); e um preco baixo perto de deixar o escopo forjavel.
+#
+# O token vai num cookie proprio, e nao dentro do cookie de sessao do Flask,
+# porque aquele e permanente (30 dias, para nao perder a planilha carregada) e
+# faria o admin sobreviver a fechar o navegador. Este nao tem Expires: o browser
+# descarta ao fechar. Nao precisa de assinatura — o valor ja e um segredo
+# aleatorio que so vale enquanto existir em _ADMIN_SESSOES.
+_ADMIN_COOKIE = "admin_token"
 _ADMIN_SESSOES = {}                  # token -> (escopo, expira_em)
 _ADMIN_SESSOES_LOCK = threading.Lock()
-_ADMIN_SESSAO_HORAS = 12
+_ADMIN_OCIOSO_MIN = 30               # cai depois de 30 min sem uso da aba Admin
 
 
 def _abrir_sessao_admin(escopo):
@@ -637,19 +644,24 @@ def _abrir_sessao_admin(escopo):
         for t, (_, exp) in list(_ADMIN_SESSOES.items()):
             if exp <= agora:
                 _ADMIN_SESSOES.pop(t, None)
-        _ADMIN_SESSOES[token] = (escopo, agora + timedelta(hours=_ADMIN_SESSAO_HORAS))
+        _ADMIN_SESSOES[token] = (escopo, agora + timedelta(minutes=_ADMIN_OCIOSO_MIN))
     return token
 
 
 def _fechar_sessao_admin():
-    token = session.pop("admin_token", None)
+    """Derruba o login deste browser. Quem chama precisa apagar o cookie na
+    resposta (_apagar_cookie_admin)."""
+    token = request.cookies.get(_ADMIN_COOKIE)
     if token:
         with _ADMIN_SESSOES_LOCK:
             _ADMIN_SESSOES.pop(token, None)
+    session.pop("admin_token", None)   # resquício do formato antigo
 
 
 def _escopo_atual():
-    token = session.get("admin_token")
+    """Escopo do login atual, renovando a janela de inatividade. None se não há
+    login, se o token não existe mais ou se passou do ocioso."""
+    token = request.cookies.get(_ADMIN_COOKIE)
     if not token:
         return None
     with _ADMIN_SESSOES_LOCK:
@@ -657,10 +669,45 @@ def _escopo_atual():
         if not dados:
             return None
         escopo, expira = dados
-        if expira <= datetime.now():
+        agora = datetime.now()
+        if expira <= agora:
             _ADMIN_SESSOES.pop(token, None)
             return None
+        # Cada request da aba Admin empurra o prazo: o que expira é a
+        # inatividade, não o tempo desde o login.
+        _ADMIN_SESSOES[token] = (escopo, agora + timedelta(minutes=_ADMIN_OCIOSO_MIN))
     return escopo
+
+
+def _erro_sem_login():
+    """403 de sessão expirada. O marcador 'expirado' separa este caso do 403 de
+    permissão (senha de unidade mexendo no time da outra): só no primeiro faz
+    sentido o front devolver para a tela de senha."""
+    return jsonify({"erro": "Faça login na aba Admin.", "expirado": True}), 403
+
+
+def _cookie_seguro():
+    """A conexão é HTTPS? No Render o gunicorn não enxerga o esquema original,
+    então vale o cabeçalho do proxy. Marcar Secure em HTTP local faria o browser
+    descartar o cookie e o login nunca pegaria na máquina de testes."""
+    proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    if proto:
+        return proto == "https"
+    return request.is_secure
+
+
+def _gravar_cookie_admin(resp, token):
+    # Sem max_age/expires de propósito: cookie de sessão, morre ao fechar o
+    # navegador. HttpOnly porque nenhum script precisa ler o token.
+    resp.set_cookie(_ADMIN_COOKIE, token, httponly=True, samesite="Lax",
+                    secure=_cookie_seguro(), path="/")
+    return resp
+
+
+def _apagar_cookie_admin(resp):
+    resp.delete_cookie(_ADMIN_COOKIE, samesite="Lax",
+                       secure=_cookie_seguro(), path="/")
+    return resp
 
 
 def _unidades_do_escopo(escopo):
@@ -2157,16 +2204,16 @@ def admin_login():
     if not escopo:
         return jsonify({"erro": "Senha incorreta."}), 401
     _fechar_sessao_admin()                      # descarta um login anterior
-    session["admin_token"] = _abrir_sessao_admin(escopo)
-    session.permanent = True
+    token = _abrir_sessao_admin(escopo)
     app.logger.info(f"[Admin] Login no escopo: {escopo}")
-    return jsonify({"escopo": escopo, "unidades": _unidades_do_escopo(escopo)})
+    resp = jsonify({"escopo": escopo, "unidades": _unidades_do_escopo(escopo)})
+    return _gravar_cookie_admin(resp, token)
 
 
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout():
     _fechar_sessao_admin()
-    return jsonify({"ok": True})
+    return _apagar_cookie_admin(jsonify({"ok": True}))
 
 
 @app.route("/api/admin/cadastro")
@@ -2204,7 +2251,7 @@ def admin_cadastro():
 def admin_add_vendedor():
     escopo = _escopo_atual()
     if not escopo:
-        return jsonify({"erro": "Faça login na aba Admin."}), 403
+        return _erro_sem_login()
 
     body = request.get_json(silent=True) or {}
     nome     = (body.get("nome") or "").strip()
@@ -2245,7 +2292,7 @@ def admin_add_vendedor():
 def admin_remover_vendedor():
     escopo = _escopo_atual()
     if not escopo:
-        return jsonify({"erro": "Faça login na aba Admin."}), 403
+        return _erro_sem_login()
 
     body = request.get_json(silent=True) or {}
     nome = (body.get("nome") or "").strip()
@@ -2271,7 +2318,7 @@ def admin_editar_vendedor():
     """Edita Slack ID, unidade e/ou metas individuais de um vendedor."""
     escopo = _escopo_atual()
     if not escopo:
-        return jsonify({"erro": "Faça login na aba Admin."}), 403
+        return _erro_sem_login()
 
     body = request.get_json(silent=True) or {}
     nome = (body.get("nome") or "").strip()
@@ -2324,7 +2371,7 @@ def admin_salvar_metas():
     """Salva metas globais (só escopo geral) ou de uma unidade."""
     escopo = _escopo_atual()
     if not escopo:
-        return jsonify({"erro": "Faça login na aba Admin."}), 403
+        return _erro_sem_login()
 
     body    = request.get_json(silent=True) or {}
     nivel   = (body.get("nivel") or "").strip()
