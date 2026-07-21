@@ -191,6 +191,20 @@ function fecharDrawer() {
   if (drawer) drawer.classList.add("hidden");
 }
 
+// ─── Aviso de falha ao gravar no GitHub ───────────────────────────────────
+// O GitHub é a persistência permanente: o disco do Render é apagado a cada
+// deploy, e no restart o app baixa o arquivo do repositório por cima do local.
+// Se a gravação falhou, a alteração vale só até o próximo restart — mostrar
+// apenas "salvo ✓" faria o dado sumir sem ninguém entender por quê.
+function avisarFalhaGithub(data) {
+  const gh = data && data.github;
+  if (!gh || !gh.alerta) return;
+  showToast(
+    `Atenção: não foi possível gravar no GitHub, então esta alteração se perde no próximo deploy. ${gh.erro || ""}`.trim(),
+    "error"
+  );
+}
+
 // ─── Toast notifications ──────────────────────────────────────────────────
 function showToast(mensagem, tipo = "info") {
   const container = document.getElementById("toast-container");

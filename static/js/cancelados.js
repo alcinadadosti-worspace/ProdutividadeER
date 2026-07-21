@@ -16,18 +16,24 @@ async function _cancListar() {
   return r.json();
 }
 
+// O aviso de falha no GitHub fica aqui, nos helpers, e não em cada chamador:
+// são vários pontos que adicionam/removem cancelados e todos precisam avisar.
 async function _cancAdicionar(codigos) {
   const r = await fetch("/api/cancelados", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ codigos }),
   });
-  return r.json();
+  const data = await r.json();
+  avisarFalhaGithub(data);
+  return data;
 }
 
 async function _cancRemover(codigo) {
   const r = await fetch(`/api/cancelados/${encodeURIComponent(codigo)}`, { method: "DELETE" });
-  return r.json();
+  const data = await r.json();
+  avisarFalhaGithub(data);
+  return data;
 }
 
 async function _cancDados() {

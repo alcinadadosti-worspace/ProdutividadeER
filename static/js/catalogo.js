@@ -109,6 +109,7 @@ async function salvarMarcas() {
     if (!res.ok) throw new Error(data.erro || "Erro ao salvar");
 
     showToast(`${fmtNum(data.salvos)} produto${data.salvos !== 1 ? "s" : ""} cadastrado${data.salvos !== 1 ? "s" : ""} com sucesso!`, "success");
+    avisarFalhaGithub(data);
     fecharModalSemMarca();
     fetch("/api/filtros").then(r => r.json()).then(f => _atualizarFiltrosBar(f)).catch(() => {});
     setTimeout(() => navegarPara("dashboard"), 400);

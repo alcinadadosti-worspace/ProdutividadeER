@@ -89,6 +89,34 @@ def _gh_request(method, path, body=None):
         raise
 
 
+def _gh_put(path, body):
+    """Grava um arquivo no repositorio e confirma que ele foi aceito.
+
+    Existe por causa de uma pegadinha: _gh_request converte 404 em None. Num GET
+    isso quer dizer "o arquivo ainda nao existe" — comportamento desejado. Num
+    PUT quer dizer token sem permissao de escrita, porque o GitHub responde 404
+    (e nao 403) para nao revelar se o repositorio existe. Tratar esse None como
+    sucesso faria toda alteracao se perder calada: o app diria "salvo" e o
+    conteudo voltaria ao estado do repo no proximo deploy.
+
+    Retorna (ok, erro).
+    """
+    if _gh_request("PUT", path, body) is None:
+        return False, (f"GitHub respondeu 404 ao gravar {path} — o GITHUB_TOKEN "
+                       f"provavelmente não tem permissão de escrita neste repositório.")
+    return True, None
+
+
+def _gh_perdeu_dados(gh_ok, houve_mudanca=True):
+    """True quando a falha no GitHub significa perda real de dados, e por isso
+    merece um aviso na tela.
+
+    Nao e alerta quando nao ha token (rodando local, o disco basta) nem quando
+    nao havia nada para salvar — nesses dois casos _gh_salvar_* tambem devolve
+    ok=False, mas nada foi perdido."""
+    return bool(houve_mudanca) and _gh_ok() and not gh_ok
+
+
 def _gh_ler_marcas():
     """Lê marcas_catalog.json do GitHub. Retorna {} se não existir ou sem token."""
     if not _gh_ok():
@@ -125,7 +153,9 @@ def _gh_salvar_marcas(marcas_dict):
         if sha:
             body["sha"] = sha
 
-        _gh_request("PUT", _GH_FILE_MARCAS, body)
+        ok, erro = _gh_put(_GH_FILE_MARCAS, body)
+        if not ok:
+            return False, erro
         app.logger.info(f"[GitHub] marcas_catalog.json atualizado ({len(marcas_dict)} entradas)")
         return True, None
     except urllib.error.HTTPError as e:
@@ -180,7 +210,9 @@ def _gh_salvar_cancelados(codigos_set):
         if sha:
             body["sha"] = sha
 
-        _gh_request("PUT", _GH_FILE_CANCELADOS, body)
+        ok, erro = _gh_put(_GH_FILE_CANCELADOS, body)
+        if not ok:
+            return False, erro
         app.logger.info(f"[GitHub] cancelados.json atualizado ({len(codigos_set)} códigos)")
         return True, None
     except urllib.error.HTTPError as e:
@@ -228,14 +260,9 @@ def _gh_salvar_vendedores(cadastro):
         if sha:
             body["sha"] = sha
 
-        resp = _gh_request("PUT", _GH_FILE_VENDEDORES, body)
-        if resp is None:
-            # _gh_request converte 404 em None. Num GET isso quer dizer "arquivo
-            # ainda nao existe", mas num PUT significa token sem permissao de
-            # escrita — o GitHub responde 404 para nao revelar se o repo existe.
-            # Tratar como sucesso perderia a alteracao silenciosamente.
-            return False, ("GitHub respondeu 404 ao gravar — o GITHUB_TOKEN "
-                           "provavelmente não tem permissão de escrita neste repositório.")
+        ok, erro = _gh_put(_GH_FILE_VENDEDORES, body)
+        if not ok:
+            return False, erro
         qtd = len(cadastro.get("vendedores", []))
         app.logger.info(f"[GitHub] vendedores.json atualizado ({qtd} vendedores)")
         return True, None
@@ -1090,7 +1117,7 @@ def cancelados_adicionar():
         "linhas_movidas": movidas_total,
         "total": total,
         "cancelados": lista,
-        "github": {"ok": gh_ok, "erro": gh_erro},
+        "github": {"ok": gh_ok, "erro": gh_erro, "alerta": _gh_perdeu_dados(gh_ok)},
     })
 
 
@@ -1146,7 +1173,7 @@ def cancelados_remover(codigo):
         "linhas_devolvidas": len(voltam),
         "total": total,
         "cancelados": lista,
-        "github": {"ok": gh_ok, "erro": gh_erro},
+        "github": {"ok": gh_ok, "erro": gh_erro, "alerta": _gh_perdeu_dados(gh_ok)},
     })
 
 
@@ -2533,7 +2560,13 @@ def cadastrar_produtos():
     _aplicar_marcas_usuario(g.est["vendas"])
     _salvar_estado()
 
-    return jsonify({"ok": True, "salvos": salvos, "github": {"ok": gh_ok, "erro": gh_erro}})
+    return jsonify({
+        "ok": True,
+        "salvos": salvos,
+        # salvos == 0 significa "nao havia marca nova" — nesse caso o ok=False do
+        # _gh_salvar_marcas e so o "marcas_dict vazio", nao uma perda.
+        "github": {"ok": gh_ok, "erro": gh_erro, "alerta": _gh_perdeu_dados(gh_ok, salvos)},
+    })
 
 
 @app.route("/api/dados")
