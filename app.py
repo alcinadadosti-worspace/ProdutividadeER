@@ -54,6 +54,7 @@ DB_PATH         = os.path.join(BASE_DIR, "produtos.db")
 STATE_FILE      = os.path.join(BASE_DIR, "_state.json")
 CANCELADOS_FILE = os.path.join(BASE_DIR, "cancelados.json")
 VENDEDORES_FILE = os.path.join(BASE_DIR, "vendedores.json")
+MARCAS_FILE     = os.path.join(BASE_DIR, "marcas_catalog.json")
 
 # ─── GitHub — persistência permanente de arquivos de estado ──────────────────
 # marcas_catalog.json e cancelados.json sobrevivem a deploys do Render gravando
@@ -299,8 +300,25 @@ _marcas_gh_lock        = threading.Lock()
 # request chegar.
 
 
+def _carregar_marcas_disco():
+    """Lê marcas_catalog.json do disco (cópia versionada no repositório).
+    Tolerante a arquivo ausente ou corrompido."""
+    try:
+        if os.path.exists(MARCAS_FILE):
+            with open(MARCAS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        app.logger.warning(f"[Catálogo] Erro ao ler {MARCAS_FILE}: {e}")
+    return {}
+
+
 def _gh_ler_marcas_cached():
-    """Retorna marcas do GitHub usando cache em memória com TTL de 5 minutos."""
+    """Retorna marcas do GitHub usando cache em memória com TTL de 5 minutos.
+    Sem token, ou se o GitHub falhar, cai para a cópia em disco — senão as
+    marcas definidas pelo usuário somem em silêncio e o % de multimarca
+    despenca sem ninguém perceber."""
     global _marcas_gh_cache, _marcas_gh_ts
     agora = _time_mod.time()
     with _marcas_gh_lock:
@@ -308,6 +326,10 @@ def _gh_ler_marcas_cached():
             return dict(_marcas_gh_cache)
     # Busca fora do lock para não bloquear outras threads durante o HTTP
     marcas = _gh_ler_marcas()
+    if not marcas:
+        marcas = _carregar_marcas_disco()
+        if marcas:
+            app.logger.info(f"[Catálogo] {len(marcas)} marcas carregadas do disco (GitHub indisponível)")
     with _marcas_gh_lock:
         _marcas_gh_cache = marcas
         _marcas_gh_ts    = _time_mod.time()
@@ -335,6 +357,15 @@ def _normalizar_codigo_pedido(valor):
     if valor is None:
         return ""
     return re.sub(r"[^\d]", "", str(valor))
+
+
+def _chave_pedido(venda):
+    """Chave de contagem de pedidos. Nos relatórios a relação pedido↔nota é
+    1:1, mas a nota nem sempre vem preenchida: itens não faturados chegam com
+    Nota Fiscal = "0". Contar por nota fazia pedidos distintos caírem todos no
+    mesmo balde "0" e virarem um só. O código do pedido nunca falta — é ele a
+    chave, com a nota como reserva."""
+    return venda.get("CodigoPedido") or venda.get("NotaFiscal") or ""
 
 
 def _carregar_cancelados_disco():
@@ -1374,7 +1405,7 @@ def dashboard():
 
     total_faturado = sum(_safe_float(v["TotalPraticado"]) for v in vendas)
 
-    # Pedidos contados por Nota Fiscal (uma nota = um pedido). Fallback para CodigoPedido se faltar.
+    # Pedidos contados pelo código do pedido (a relação pedido↔nota é 1:1).
     # "Pedidos com Vendedor" considera APENAS o time cadastrado em vendedores.json —
     # pedidos atribuidos a outros usuarios (gerentes, supervisores) nao entram nesse card.
     oficiais        = _vendedores_oficiais_norm()
@@ -1383,7 +1414,7 @@ def dashboard():
     notas_oficiais  = set()
     fat_sem_vend    = 0.0
     for v in vendas:
-        nf = v.get("NotaFiscal") or v.get("CodigoPedido")
+        nf = _chave_pedido(v)
         if not nf:
             continue
         notas_total.add(nf)
@@ -1577,7 +1608,7 @@ def vendedores():
         m["codigo"] = cod
         total = _safe_float(v["TotalPraticado"])
         m["total"] += total
-        ped = v.get("NotaFiscal") or v.get("CodigoPedido")
+        ped = _chave_pedido(v)
         if ped:
             m["pedidos"].add(ped)
         m["quantidade"] += v.get("Quantidade", 0)

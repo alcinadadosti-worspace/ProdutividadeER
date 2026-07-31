@@ -92,11 +92,11 @@ function _templateDashboard(d) {
     <div class="kpi-grid mb-12">
       <div class="kpi-card">
         <div class="kpi-header">
-          <span class="kpi-label">Pedidos com Vendedor</span>
+          <span class="kpi-label">Pedidos do Time Cadastrado</span>
           <div class="kpi-icon green"><i data-lucide="user-check"></i></div>
         </div>
         <div class="kpi-value">${fmtNum(kpi.pedidos_com_vendedor)}</div>
-        <div class="kpi-sub">${_pct(kpi.pct_pedidos_com_vendedor)} do total · atribuídos a um vendedor</div>
+        <div class="kpi-sub">${_pct(kpi.pct_pedidos_com_vendedor)} do total · só quem está em Vendedores</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-header">

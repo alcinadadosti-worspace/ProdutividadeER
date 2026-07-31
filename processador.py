@@ -202,13 +202,22 @@ def ler_planilha(caminho_arquivo):
         "CodigoUsuarioCriacao", "UsuarioCriacao",
         "CodigoUsuarioFinalizacao", "UsuarioFinalizacao",
     ]
+    # O preenchimento é ffill + bfill DENTRO do pedido: são campos do cabeçalho,
+    # então valem para o pedido inteiro independente de qual linha os trouxe.
+    # Sem o bfill, um pedido cuja primeira linha vem sem Código Vendedor ficava
+    # com aquela linha órfã, que caía no fallback de UsuarioCriacao abaixo e
+    # entregava o pedido ao caixa — dividindo pedido, cliente e faturamento
+    # entre o vendedor real e quem digitou.
     for campo in CAMPOS_CABECALHO:
         if campo not in df_filtrado.columns:
             continue
         df_filtrado[campo] = df_filtrado[campo].replace("nan", pd.NA)
         if "CodigoPedido" in df_filtrado.columns:
             df_filtrado[campo] = df_filtrado.groupby("CodigoPedido", sort=False)[campo].transform("ffill")
+            df_filtrado[campo] = df_filtrado.groupby("CodigoPedido", sort=False)[campo].transform("bfill")
         else:
+            # Sem chave de pedido não dá para delimitar o grupo; o bfill global
+            # vazaria dados de um pedido para o anterior.
             df_filtrado[campo] = df_filtrado[campo].ffill()
 
     # Marca pedidos originalmente sem código de vendedor (faturados pelo caixa).
