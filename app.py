@@ -1028,8 +1028,21 @@ def upload():
     if ext not in (".xlsx", ".xls", ".csv"):
         return jsonify({"erro": "Formato inválido. Envie um arquivo .xlsx ou .csv"}), 400
 
-    # Salvar temporariamente por sessão (cada usuário tem seu próprio arquivo)
-    tmp_path = _tmp_path_sid(_sid(), ext)
+    # Salvar temporariamente por sessão (cada usuário tem seu próprio arquivo).
+    # Antes, remover restos de uploads anteriores com OUTRA extensão: /api/processar
+    # procura o temporário na ordem fixa .xlsx → .xls → .csv, então um .xlsx antigo
+    # esquecido no disco seria processado no lugar do .csv recém-enviado.
+    sid = _sid()
+    for outra in (".xlsx", ".xls", ".csv"):
+        if outra == ext:
+            continue
+        antigo = _tmp_path_sid(sid, outra)
+        try:
+            if os.path.exists(antigo):
+                os.remove(antigo)
+        except OSError:
+            pass
+    tmp_path = _tmp_path_sid(sid, ext)
     arquivo.save(tmp_path)
 
     try:
@@ -1042,7 +1055,16 @@ def upload():
             "preview": preview,
         })
     except Exception as e:
-        return jsonify({"erro": f"Erro ao ler planilha: {str(e)}"}), 500
+        # Arquivo ilegível não pode ficar no disco: /api/processar o pegaria
+        # depois e falharia (ou processaria lixo) sem o usuário entender por quê.
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        msg = f"Erro ao ler planilha: {str(e)}"
+        if ext == ".xls":
+            msg += " — arquivos .xls antigos não são suportados; abra no Excel e salve como .xlsx."
+        return jsonify({"erro": msg}), 500
 
 
 @app.route("/api/processar", methods=["POST"])
@@ -2697,6 +2719,15 @@ def dados():
 def export_csv():
     """Exporta todos os dados processados como CSV."""
     vendas = _aplicar_filtros(g.est["vendas"], request.args)
+
+    # Mesma busca global da tela Dados Brutos: o botão Exportar envia o
+    # parâmetro e o usuário espera baixar exatamente o que a tabela mostra —
+    # ignorá-lo exportava todas as linhas em silêncio.
+    search = request.args.get("search", "").strip().lower()
+    if search:
+        campos_busca = ["Vendedor", "Produto", "CodigoPedido", "Revendedor", "Ciclo", "CodigoProduto"]
+        vendas = [v for v in vendas
+                  if any(search in str(v.get(c, "")).lower() for c in campos_busca)]
 
     campos = [
         "CodigoVendedor", "Vendedor", "CodigoProduto", "Produto",

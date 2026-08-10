@@ -64,7 +64,7 @@ async function renderVendedores() {
     });
   } catch (err) {
     page.querySelector("#vend-table-wrap").innerHTML =
-      `<div class="empty-state"><p>${err.message}</p></div>`;
+      `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
   }
 }
 
@@ -109,16 +109,16 @@ function _renderTabelaVendedores(lista) {
   }).join("");
 
   const tbody = sorted.map(v => `
-    <tr class="vend-row" data-cod="${v.codigo}" style="cursor:pointer">
-      <td>${v.nome}</td>
-      <td class="mono secondary">${v.codigo}</td>
+    <tr class="vend-row" data-cod="${esc(v.codigo)}" style="cursor:${v.codigo === "?" ? "default" : "pointer"}">
+      <td>${esc(v.nome)}</td>
+      <td class="mono secondary">${esc(v.codigo)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(v.total_faturado)}</td>
       <td class="mono" style="text-align:right">${fmtNum(v.qtd_pedidos)}</td>
       <td class="mono secondary" style="text-align:right">${(v.pct_pedidos ?? 0).toFixed(1)}%</td>
       <td class="mono" style="text-align:right">${fmtBRL(v.ticket_medio)}</td>
       <td class="mono" style="text-align:right">${fmtNum(v.quantidade)}</td>
       <td class="mono" style="text-align:right">${v.qtd_marcas ?? "—"}</td>
-      <td class="secondary" style="white-space:nowrap">${v.top_marca || "—"}</td>
+      <td class="secondary" style="white-space:nowrap">${esc(v.top_marca || "—")}</td>
       <td style="text-align:right">
         <span class="badge badge-cabelos">${v.pct_iaf_cabelos.toFixed(1)}%</span>
       </td>
@@ -152,9 +152,13 @@ function _renderTabelaVendedores(lista) {
     });
   });
 
-  // Row click → drawer
+  // Row click → drawer. "?" é o balde de vendas sem vendedor: não há detalhe
+  // no backend (as linhas têm CodigoVendedor vazio) e o fetch daria 404.
   wrap.querySelectorAll(".vend-row").forEach(tr => {
-    tr.addEventListener("click", () => abrirDrawerVendedor(tr.dataset.cod));
+    tr.addEventListener("click", () => {
+      const cod = tr.dataset.cod;
+      if (cod && cod !== "?") abrirDrawerVendedor(cod);
+    });
   });
 }
 
@@ -172,7 +176,7 @@ async function abrirDrawerVendedor(codigo) {
   codEl.textContent  = codigo;
 
   try {
-    const res = await fetch(`/api/vendedor/${codigo}`);
+    const res = await fetch(`/api/vendedor/${encodeURIComponent(codigo)}`);
     const d = await res.json();
     if (!res.ok) throw new Error(d.erro || "Erro");
 
@@ -185,7 +189,7 @@ async function abrirDrawerVendedor(codigo) {
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
         ${d.por_iaf.map(x => `
           <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
-            <div style="font-size:13px;color:var(--text-secondary)">${x.classificacao}</div>
+            <div style="font-size:13px;color:var(--text-secondary)">${esc(x.classificacao)}</div>
             <div style="font-size:15px;font-weight:600;font-family:monospace;color:${_iafColor(x.classificacao)}">${fmtBRL(x.total)}</div>
           </div>
         `).join("")}
@@ -220,7 +224,7 @@ async function abrirDrawerVendedor(codigo) {
           <tbody>
             ${d.retencao.por_ciclo.map(c => `
               <tr>
-                <td class="mono secondary" style="font-size:12px">${c.ciclo}</td>
+                <td class="mono secondary" style="font-size:12px">${esc(c.ciclo)}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtNum(c.total)}</td>
                 <td class="mono" style="text-align:right;font-size:12px;color:#4ADE80">${fmtNum(c.retidos)}</td>
                 <td class="mono" style="text-align:right;font-size:12px;color:var(--accent-blue)">${fmtNum(c.novos)}</td>
@@ -240,7 +244,7 @@ async function abrirDrawerVendedor(codigo) {
           const { cor } = _corMarca(x.marca);
           return `
           <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:120px;font-size:12px;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600">${x.marca}</div>
+            <div style="width:120px;font-size:12px;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600">${esc(x.marca)}</div>
             <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
               <div style="width:${pct.toFixed(1)}%;height:100%;background:${cor};border-radius:4px"></div>
             </div>
@@ -260,9 +264,9 @@ async function abrirDrawerVendedor(codigo) {
           return `
           <div class="marcas-juntas-par">
             <span style="font-size:11px;color:var(--text-tertiary);width:18px;text-align:right;flex-shrink:0">${i + 1}.</span>
-            <span class="marcas-juntas-badge" style="background:${c0.bg};color:${c0.cor}">${x.marcas[0]}</span>
+            <span class="marcas-juntas-badge" style="background:${c0.bg};color:${c0.cor}">${esc(x.marcas[0])}</span>
             <span class="marcas-juntas-sep">+</span>
-            <span class="marcas-juntas-badge" style="background:${c1.bg};color:${c1.cor}">${x.marcas[1]}</span>
+            <span class="marcas-juntas-badge" style="background:${c1.bg};color:${c1.cor}">${esc(x.marcas[1])}</span>
             <span class="marcas-juntas-count">${x.pedidos} pedido${x.pedidos !== 1 ? "s" : ""}</span>
           </div>`;
         }).join("")}
@@ -277,7 +281,7 @@ async function abrirDrawerVendedor(codigo) {
           const catId = `cat-items-${i}`;
           return `
           <div class="cat-row" style="border-radius:6px;overflow:hidden;background:var(--bg-secondary)">
-            <div class="cat-header" data-cat="${x.categoria}" data-target="${catId}"
+            <div class="cat-header" data-cat="${esc(x.categoria)}" data-target="${catId}"
                  style="display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;user-select:none">
               <div style="width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
                 <svg class="cat-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -285,7 +289,7 @@ async function abrirDrawerVendedor(codigo) {
                   <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
               </div>
-              <div style="width:130px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.categoria}</div>
+              <div style="width:130px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.categoria)}</div>
               <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden">
                 <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px;opacity:0.7"></div>
               </div>
@@ -304,7 +308,7 @@ async function abrirDrawerVendedor(codigo) {
                 <tbody>
                   ${(d.produtos_por_categoria?.[x.categoria] || []).map(p => `
                     <tr style="border-bottom:1px solid var(--border-subtle)">
-                      <td style="font-size:11px;padding:5px 0;color:var(--text-primary);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nome}</td>
+                      <td style="font-size:11px;padding:5px 0;color:var(--text-primary);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.nome)}</td>
                       <td style="font-size:11px;font-family:monospace;text-align:right;padding:5px 0;color:var(--text-secondary)">${fmtNum(p.quantidade)}</td>
                       <td style="font-size:11px;font-family:monospace;text-align:right;padding:5px 0;color:var(--text-secondary)">${fmtBRL(p.total)}</td>
                     </tr>
@@ -334,9 +338,9 @@ async function abrirDrawerVendedor(codigo) {
           <tbody>
             ${d.pedidos.map(p => `
               <tr>
-                <td class="mono secondary" style="font-size:12px">${p.codigo}</td>
-                <td class="secondary" style="font-size:12px">${p.data || "—"}</td>
-                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${p.revendedor || "—"}</td>
+                <td class="mono secondary" style="font-size:12px">${esc(p.codigo)}</td>
+                <td class="secondary" style="font-size:12px">${esc(p.data || "—")}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${esc(p.revendedor || "—")}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtBRL(p.total)}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtNum(p.itens)}</td>
               </tr>
@@ -375,7 +379,7 @@ async function abrirDrawerVendedor(codigo) {
     }
 
   } catch (err) {
-    content.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`;
+    content.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
   }
 }
 
@@ -396,7 +400,8 @@ const _MARCA_CORES = [
 function _badgeMarca(pct, qtd) {
   const cor = pct >= 50 ? "#4ADE80" : pct >= 20 ? "#FCD34D" : "#94A3B8";
   const bg  = pct >= 50 ? "rgba(74,222,128,0.15)" : pct >= 20 ? "rgba(252,211,77,0.15)" : "rgba(148,163,184,0.1)";
-  return `<span class="badge" style="background:${bg};color:${cor}" title="${qtd} pedido${qtd !== 1 ? "s" : ""}">${pct.toFixed(1)}%</span>`;
+  // A contagem é de CLIENTES (regra multimarca por cliente), não de pedidos
+  return `<span class="badge" style="background:${bg};color:${cor}" title="${qtd} cliente${qtd !== 1 ? "s" : ""}">${pct.toFixed(1)}%</span>`;
 }
 
 function _badgeRetencao(pct, retidos, total) {

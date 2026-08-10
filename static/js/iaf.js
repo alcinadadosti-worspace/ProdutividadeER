@@ -228,7 +228,7 @@ function _tabelaPenetracao(lista, tipo) {
     const barColor = r.pct_penetracao >= 50 ? accentColor : r.pct_penetracao >= 25 ? midColor : "var(--text-muted)";
     return `
       <tr>
-        <td>${r.nome}</td>
+        <td>${esc(r.nome)}</td>
         <td class="mono" style="text-align:right">${fmtNum(r.rev_iaf)}</td>
         <td class="mono" style="text-align:right">${fmtNum(r.rev_compradoras)}</td>
         <td style="min-width:140px">
@@ -264,8 +264,8 @@ function _tabelaTopProdutos(lista) {
   }
   const rows = lista.map(p => `
     <tr>
-      <td class="mono secondary">${p.sku}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${p.nome}</td>
+      <td class="mono secondary">${esc(p.sku)}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${esc(p.nome)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(p.total)}</td>
       <td class="mono" style="text-align:right">${fmtNum(p.quantidade)}</td>
     </tr>

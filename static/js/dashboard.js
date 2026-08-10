@@ -21,7 +21,7 @@ async function renderDashboard() {
     _atualizarFiltrosBar(_dashData.filtros);
   } catch (err) {
     console.error("[Dashboard] Erro ao carregar:", err);
-    page.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${err.message}</p></div>`;
+    page.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${esc(err.message)}</p></div>`;
     lucide.createIcons();
     return;
   }
@@ -46,7 +46,7 @@ function _templateDashboard(d) {
         <div>
           <div class="page-title">Dashboard</div>
           <div class="page-subtitle">
-            ${d.arquivo_nome || "Sem arquivo"} &nbsp;·&nbsp; ${periodo} &nbsp;·&nbsp; ${fmtNum(d.total_registros)} registros
+            ${esc(d.arquivo_nome || "Sem arquivo")} &nbsp;·&nbsp; ${periodo} &nbsp;·&nbsp; ${fmtNum(d.total_registros)} registros
           </div>
         </div>
       </div>
@@ -293,7 +293,8 @@ function _renderGraficos(d) {
         if (!elements.length) return;
         const idx = elements[0].index;
         const cod = d.top_vendedores[idx]?.codigo;
-        if (cod) abrirDrawerVendedor(cod);
+        // "?" é o balde de vendas sem vendedor — não existe detalhe para abrir
+        if (cod && cod !== "?") abrirDrawerVendedor(cod);
       },
       onHover: (event, elements) => {
         event.native.target.style.cursor = elements.length ? "pointer" : "default";
@@ -305,27 +306,31 @@ function _renderGraficos(d) {
 function _atualizarFiltrosBar(filtros) {
   if (!filtros) return;
 
+  // Listas vazias NÃO apagam os chips existentes: quando a combinação de
+  // filtros zera as vendas, o backend responde com filtros vazios — sumir com
+  // os chips deixaria o usuário sem como desmarcar o filtro que zerou tudo.
+
   // Ciclos
   const grpCiclo = document.getElementById("filtros-ciclo");
-  if (grpCiclo) {
+  if (grpCiclo && filtros.ciclos?.length) {
     grpCiclo.innerHTML = filtros.ciclos.map(c =>
-      `<button class="filter-chip ${window.APP_FILTROS?.ciclo === c ? "active" : ""}" data-tipo="ciclo" data-valor="${c}">${c}</button>`
+      `<button class="filter-chip ${window.APP_FILTROS?.ciclo === c ? "active" : ""}" data-tipo="ciclo" data-valor="${esc(c)}">${esc(c)}</button>`
     ).join("");
   }
 
   // Unidades
   const grpUnidade = document.getElementById("filtros-unidade");
-  if (grpUnidade) {
+  if (grpUnidade && filtros.unidades?.length) {
     grpUnidade.innerHTML = filtros.unidades.map(u =>
-      `<button class="filter-chip ${window.APP_FILTROS?.unidade === u ? "active" : ""}" data-tipo="unidade" data-valor="${u}">${u}</button>`
+      `<button class="filter-chip ${window.APP_FILTROS?.unidade === u ? "active" : ""}" data-tipo="unidade" data-valor="${esc(u)}">${esc(u)}</button>`
     ).join("");
   }
 
   // IAF
   const grpIaf = document.getElementById("filtros-iaf");
-  if (grpIaf) {
+  if (grpIaf && filtros.classificacoes?.length) {
     grpIaf.innerHTML = filtros.classificacoes.map(clf =>
-      `<button class="filter-chip ${window.APP_FILTROS?.classificacao === clf ? "active" : ""}" data-tipo="classificacao" data-valor="${clf}">${clf}</button>`
+      `<button class="filter-chip ${window.APP_FILTROS?.classificacao === clf ? "active" : ""}" data-tipo="classificacao" data-valor="${esc(clf)}">${esc(clf)}</button>`
     ).join("");
   }
 
@@ -334,7 +339,7 @@ function _atualizarFiltrosBar(filtros) {
   if (grpVend && filtros.vendedores?.length) {
     const ativo = window.APP_FILTROS?.vendedor || "";
     const options = filtros.vendedores.map(v =>
-      `<option value="${v.codigo}" ${ativo === v.codigo ? "selected" : ""}>${_abreviarNome(v.nome)}</option>`
+      `<option value="${esc(v.codigo)}" ${ativo === v.codigo ? "selected" : ""}>${esc(_abreviarNome(v.nome))}</option>`
     ).join("");
     grpVend.innerHTML = `
       <select id="select-vendedor" class="filtros-select ${ativo ? "active" : ""}">
@@ -357,8 +362,10 @@ function _atualizarFiltrosBar(filtros) {
     });
   }
 
-  // Bind chips
-  document.querySelectorAll(".filter-chip").forEach(chip => {
+  // Bind chips — só os da barra global. O seletor solto pegava também os
+  // chips de outras abas (Produtos, Comparativo) e cada um ganhava um
+  // toggleFiltro(undefined) extra que re-renderizava a página inteira.
+  document.querySelectorAll("#filtros-bar .filter-chip").forEach(chip => {
     chip.addEventListener("click", () => {
       const tipo = chip.dataset.tipo;
       const valor = chip.dataset.valor;

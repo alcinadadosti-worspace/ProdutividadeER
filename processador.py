@@ -20,7 +20,9 @@ def _norm_col(s):
     s = str(s).lower().strip()
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"[^a-z0-9 ]", "", s)
+    # � (caractere de substituição) é preservado: marca onde o encoding
+    # corrompeu o cabeçalho e vira curinga em _mapear_colunas.
+    s = re.sub(r"[^a-z0-9 �]", "", s)
     return s
 
 
@@ -172,6 +174,26 @@ def _mapear_colunas(df):
             mapeamento[col_real] = campo_interno
             campos_ja_mapeados.add(campo_interno)
 
+    # Segunda passada: cabeçalhos corrompidos por encoding chegam com � no
+    # lugar dos acentos ("C�digo Vendedor"). Sem isso a coluna era descartada
+    # em silêncio e todo pedido caía no fallback de UsuarioCriacao — o caixa
+    # levava os clientes do vendedor. O � casa com até 2 caracteres do alias;
+    # só mapeia quando bate com exatamente um campo — na dúvida, descarta.
+    for nome_norm, col_real in norm_para_real.items():
+        if "�" not in nome_norm or col_real in mapeamento:
+            continue
+        padrao = re.compile("".join(
+            ".{0,2}" if ch == "�" else re.escape(ch) for ch in nome_norm
+        ))
+        candidatos = {
+            campo for alias, campo in COLUNAS_MAPEAMENTO.items()
+            if campo not in campos_ja_mapeados and padrao.fullmatch(alias)
+        }
+        if len(candidatos) == 1:
+            campo = candidatos.pop()
+            mapeamento[col_real] = campo
+            campos_ja_mapeados.add(campo)
+
     return mapeamento
 
 
@@ -283,6 +305,25 @@ def ler_planilha(caminho_arquivo):
         venda["Unidade"] = _identificar_unidade(venda["CanalDistribuicao"])
 
         vendas.append(venda)
+
+    # ── Remover eco de "pedido colocado" ─────────────────────────────────────
+    # Alguns pedidos vêm em dois blocos: um com Nota Fiscal = 0 (o pedido
+    # digitado) e outro com a NF real (o que foi faturado), ambos com os mesmos
+    # itens — somar os dois duplica o faturamento do pedido (ciclo 09/2026:
+    # +R$ 86 mil na Matriz). Quando o pedido tem NF real, as linhas com NF = 0
+    # são o eco e caem; pedidos SÓ com NF = 0 (não faturados) ficam intactos.
+    tem_nf_real = set()
+    for v in vendas:
+        ped = v.get("CodigoPedido")
+        nf = (v.get("NotaFiscal") or "").strip()
+        if ped and nf not in ("", "0"):
+            tem_nf_real.add(ped)
+    if tem_nf_real:
+        vendas = [
+            v for v in vendas
+            if not (v.get("CodigoPedido") in tem_nf_real
+                    and (v.get("NotaFiscal") or "").strip() in ("", "0"))
+        ]
 
     # Normalização: cada vendedor é fixado na sua unidade dominante (maioria dos registros).
     # Evita que poucos pedidos com canal errado na origem façam o vendedor aparecer em outra unidade.

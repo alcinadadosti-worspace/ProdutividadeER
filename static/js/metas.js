@@ -28,7 +28,7 @@ async function renderMetas() {
     _renderMetasPage(_metasData);
   } catch (err) {
     console.error("[Metas] Erro ao carregar:", err);
-    page.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`;
+    page.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
     lucide.createIcons();
   }
 }
@@ -57,7 +57,7 @@ function _renderMetasPage(d) {
     <div class="metas-alerta metas-alerta-info">
       <i data-lucide="user-x" style="width:15px;height:15px;flex-shrink:0"></i>
       <span><strong>${foraDoCadastro.length}</strong> ${foraDoCadastro.length === 1 ? "pessoa aparece" : "pessoas aparecem"} na planilha sem cadastro e ${foraDoCadastro.length === 1 ? "ficou" : "ficaram"} de fora desta lista:
-      ${foraDoCadastro.slice(0, 6).join(", ")}${foraDoCadastro.length > 6 ? ` e mais ${foraDoCadastro.length - 6}` : ""}.
+      ${esc(foraDoCadastro.slice(0, 6).join(", "))}${foraDoCadastro.length > 6 ? ` e mais ${foraDoCadastro.length - 6}` : ""}.
       Cadastre na aba <strong>Admin</strong> se ${foraDoCadastro.length === 1 ? "for vendedor(a)" : "forem vendedores"}.</span>
     </div>
   ` : "";
@@ -214,8 +214,17 @@ function _renderTabelaMetas(lista, metas) {
     return;
   }
 
+  // "_metas" é uma coluna calculada (quantas metas atingiu) — não existe nos
+  // itens, então ordenar por a[col] compararia undefined e nunca reordenava.
+  const _qtdMetas = v =>
+    (v.atingiu_multimarca ? 1 : 0) + (v.atingiu_cabelos ? 1 : 0) + (v.atingiu_make ? 1 : 0);
   const sorted = [...lista].sort((a, b) => {
-    let va = a[_metasSort.col], vb = b[_metasSort.col];
+    let va, vb;
+    if (_metasSort.col === "_metas") {
+      va = _qtdMetas(a); vb = _qtdMetas(b);
+    } else {
+      va = a[_metasSort.col]; vb = b[_metasSort.col];
+    }
     if (typeof va === "string") va = va.toLowerCase(), vb = vb.toLowerCase();
     if (va < vb) return _metasSort.asc ? -1 : 1;
     if (va > vb) return _metasSort.asc ? 1 : -1;
@@ -253,7 +262,7 @@ function _renderTabelaMetas(lista, metas) {
               title="${slackId ? "Enviar metas no Slack" : "Vendedor sem cadastro no Slack"}"
               ${slackId ? "" : "disabled style=\"opacity:0.35;cursor:not-allowed\""}
             ><i data-lucide="send" style="width:13px;height:13px"></i></button>
-            <span style="font-weight:500">${v.nome}</span>
+            <span style="font-weight:500">${esc(v.nome)}</span>
           </div>
         </td>
         <td style="text-align:center">
@@ -288,7 +297,7 @@ function _renderTabelaMetas(lista, metas) {
     btn.addEventListener("click", async () => {
       const payload = JSON.parse(decodeURIComponent(btn.dataset.vdata));
       if (!payload.slack_user_id) {
-        showToast(`${payload.vendedor_nome} não tem cadastro no Slack`, "error");
+        showToast(`${esc(payload.vendedor_nome)} não tem cadastro no Slack`, "error");
         return;
       }
       btn.disabled = true;
@@ -304,7 +313,7 @@ function _renderTabelaMetas(lista, metas) {
         if (!res.ok || result.erro) throw new Error(result.erro || "Erro ao enviar");
         btn.innerHTML = `<i data-lucide="check" style="width:13px;height:13px;color:#4ADE80"></i>`;
         lucide.createIcons();
-        showToast(`Metas enviadas para ${payload.vendedor_nome} no Slack ✓`, "success");
+        showToast(`Metas enviadas para ${esc(payload.vendedor_nome)} no Slack ✓`, "success");
         setTimeout(() => {
           btn.disabled = false;
           btn.innerHTML = `<i data-lucide="send" style="width:13px;height:13px"></i>`;
@@ -339,7 +348,8 @@ function _renderTabelaMetas(lista, metas) {
 function _barMeta(valor, meta, cor) {
   const atingiu = valor >= meta;
   const barCor = atingiu ? cor : (valor >= meta * 0.9 ? "#FCD34D" : "#F87171");
-  const pctBar = Math.min((valor / meta) * 100, 100);
+  // Meta 0 é aceita pelo backend — sem o guard, 0/0 vira width:NaN%
+  const pctBar = meta > 0 ? Math.min((valor / meta) * 100, 100) : 100;
   return `
     <div style="display:flex;align-items:center;gap:8px">
       <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
@@ -364,12 +374,9 @@ function _exportarMetasCSV(lista, metas) {
       v.pct_iaf_cabelos.toFixed(1), mv.iaf_cabelos, v.atingiu_cabelos ? "Sim" : "Não",
       v.pct_iaf_make.toFixed(1), mv.iaf_make, v.atingiu_make ? "Sim" : "Não",
       cnt + "/3",
-    ].join(",");
+    ];
   });
-  const csv = [header.join(","), ...rows].join("\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "metas_vendedores.csv"; a.click();
-  URL.revokeObjectURL(url);
+  // _downloadCSV (charts.js) cuida do escape — um nome com vírgula deslocava
+  // todas as colunas no join(",") manual usado antes.
+  _downloadCSV([header, ...rows], "metas_vendedores.csv");
 }

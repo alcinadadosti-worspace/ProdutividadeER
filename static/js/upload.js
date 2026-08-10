@@ -171,7 +171,7 @@ function _mostrarPreview(data) {
       let val = row[c.key] ?? "";
       if (c.key === "TotalPraticado") val = fmtBRL(val);
       if (c.key === "Quantidade") val = fmtNum(val);
-      return `<td class="${["CodigoProduto","CodigoPedido","Quantidade","TotalPraticado"].includes(c.key) ? "mono" : ""}">${val}</td>`;
+      return `<td class="${["CodigoProduto","CodigoPedido","Quantidade","TotalPraticado"].includes(c.key) ? "mono" : ""}">${esc(val)}</td>`;
     }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
@@ -210,8 +210,8 @@ async function _renderCiclosCarregados() {
           ${d.ciclos.map(c => `
             <div style="display:flex;align-items:center;gap:6px;background:var(--bg-tertiary);
                         border-radius:6px;padding:6px 10px">
-              <span style="font-size:13px;font-family:monospace;color:var(--text-primary)">${c}</span>
-              <button onclick="_removerCiclo('${c}')" title="Remover ciclo ${c}"
+              <span style="font-size:13px;font-family:monospace;color:var(--text-primary)">${esc(c)}</span>
+              <button class="btn-remover-ciclo" data-ciclo="${esc(c)}" title="Remover ciclo ${esc(c)}"
                       style="display:flex;align-items:center;background:none;border:none;
                              cursor:pointer;color:var(--text-tertiary);padding:0;line-height:1">
                 <i data-lucide="x" style="width:13px;height:13px"></i>
@@ -229,6 +229,11 @@ async function _renderCiclosCarregados() {
         </div>
       </div>
     `;
+    // onclick inline com o ciclo interpolado quebrava com valores contendo
+    // aspas — o ciclo agora viaja em data-ciclo e o bind é feito aqui.
+    wrap.querySelectorAll(".btn-remover-ciclo").forEach(btn => {
+      btn.addEventListener("click", () => _removerCiclo(btn.dataset.ciclo));
+    });
     lucide.createIcons();
   } catch (_) { wrap.innerHTML = ""; }
 }
@@ -243,10 +248,21 @@ async function _removerCiclo(ciclo) {
     const d = await res.json();
     if (!d.ok) throw new Error(d.erro);
 
-    showToast(`Ciclo ${ciclo} removido (${fmtNum(d.removidos)} registros)`, "success");
+    showToast(`Ciclo ${esc(ciclo)} removido (${fmtNum(d.removidos)} registros)`, "success");
+
+    // O filtro global pode estar apontando para o ciclo que acabou de sair —
+    // sem limpar, todas as abas continuariam filtrando por ele e mostrariam
+    // tudo zerado, sem nenhum chip visível indicando o motivo.
+    if (window.APP_FILTROS.ciclo === ciclo) {
+      delete window.APP_FILTROS.ciclo;
+      const temFiltros = Object.keys(window.APP_FILTROS).length > 0;
+      document.getElementById("btn-limpar-filtros")?.classList.toggle("hidden", !temFiltros);
+    }
 
     if (d.total === 0) {
-      // sem dados
+      // sem dados — refletir também no estado de navegação, senão as abas
+      // de análise continuam acessíveis mostrando telas vazias
+      _temDados = false;
       const badge = document.getElementById("status-badge");
       const text  = document.getElementById("status-text");
       if (badge) badge.className = "status-badge status-empty";

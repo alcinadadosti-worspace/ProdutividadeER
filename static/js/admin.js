@@ -304,7 +304,7 @@ function _renderTabelaCadastro() {
       ? `<select class="admin-input admin-input-sm adm-unidade" data-nome="${nomeAttr}">
            ${_admin.unidades.map(u => `<option value="${u}" ${u === v.unidade ? "selected" : ""}>${u}</option>`).join("")}
          </select>`
-      : `<span class="admin-cel-texto">${v.unidade}</span>`;
+      : `<span class="admin-cel-texto">${esc(v.unidade)}</span>`;
 
     const metasCels = META_CAMPOS.map(campo => {
       const individual = (v.metas || {})[campo];
@@ -328,9 +328,9 @@ function _renderTabelaCadastro() {
 
     return `
       <tr data-nome="${nomeAttr}">
-        <td><span style="font-weight:500">${v.nome}</span></td>
+        <td><span style="font-weight:500">${esc(v.nome)}</span></td>
         <td>${unidadeCel}</td>
-        <td><input type="text" class="admin-input admin-input-sm adm-slack" data-nome="${nomeAttr}" value="${v.slack_id || ""}" placeholder="U..." /></td>
+        <td><input type="text" class="admin-input admin-input-sm adm-slack" data-nome="${nomeAttr}" value="${esc(v.slack_id || "")}" placeholder="U..." /></td>
         ${metasCels}
         <td>
           <div class="admin-acoes">

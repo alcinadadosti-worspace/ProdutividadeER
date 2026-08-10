@@ -7,6 +7,9 @@ let _prodData  = [];
 let _prodFiltro = "";
 
 async function renderProdutos() {
+  // O chip renderiza como "Todos" ativo — o filtro de visitas anteriores
+  // precisa acompanhar, senão a busca reaplica um filtro invisível.
+  _prodFiltro = "";
   const page = document.getElementById("page-produtos");
   page.innerHTML = `
     <div class="page-header">
@@ -65,7 +68,7 @@ async function renderProdutos() {
 
   } catch (err) {
     page.querySelector("#prod-table-wrap").innerHTML =
-      `<div class="empty-state"><p>${err.message}</p></div>`;
+      `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
   }
 }
 
@@ -124,9 +127,9 @@ function _renderTabelaProdutos(lista) {
 
   const tbody = sorted.map((p, i) => `
     <tr>
-      <td class="mono secondary">${p.sku}</td>
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${p.nome}</td>
-      <td class="secondary" style="white-space:nowrap">${p.marca || "—"}</td>
+      <td class="mono secondary">${esc(p.sku)}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(p.nome)}</td>
+      <td class="secondary" style="white-space:nowrap">${esc(p.marca || "—")}</td>
       <td class="mono" style="text-align:right">${fmtBRL(p.total)}</td>
       <td class="mono" style="text-align:right">${fmtNum(p.quantidade)}</td>
       <td>${_badgeClf(p.classificacao)}</td>
@@ -161,7 +164,7 @@ function _badgeClf(clf) {
     "IAF Make":    "badge-make",
     "Geral":       "badge-geral",
   };
-  return `<span class="badge ${map[clf] || "badge-geral"}">${clf}</span>`;
+  return `<span class="badge ${map[clf] || "badge-geral"}">${esc(clf)}</span>`;
 }
 
 function _badgeMatch(m) {
@@ -172,5 +175,5 @@ function _badgeMatch(m) {
     "nenhum":         ["badge-none",    "—"],
   };
   const [cls, label] = map[m] || ["badge-none", m];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
 }

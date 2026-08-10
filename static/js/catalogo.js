@@ -32,13 +32,13 @@ async function abrirModalSemMarca() {
 
     // Popular datalist com marcas conhecidas
     const datalist = document.getElementById("marcas-datalist");
-    datalist.innerHTML = (resMarcas.marcas || []).map(m => `<option value="${m}">`).join("");
+    datalist.innerHTML = (resMarcas.marcas || []).map(m => `<option value="${esc(m)}">`).join("");
 
     // Renderizar tabela
     const rows = _produtosSemMarca.map((p, i) => `
       <tr>
-        <td class="mono secondary" style="white-space:nowrap">${p.sku}</td>
-        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.nome}">${p.nome}</td>
+        <td class="mono secondary" style="white-space:nowrap">${esc(p.sku)}</td>
+        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.nome)}">${esc(p.nome)}</td>
         <td class="mono" style="text-align:right;white-space:nowrap">${fmtBRL(p.total)}</td>
         <td>
           <input
@@ -67,7 +67,7 @@ async function abrirModalSemMarca() {
       </table>
     `;
   } catch (err) {
-    lista.innerHTML = `<div class="empty-state"><p>Erro ao carregar: ${err.message}</p></div>`;
+    lista.innerHTML = `<div class="empty-state"><p>Erro ao carregar: ${esc(err.message)}</p></div>`;
   }
 }
 

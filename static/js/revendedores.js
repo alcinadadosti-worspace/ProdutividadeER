@@ -137,7 +137,7 @@ async function renderRevendedores() {
     });
 
   } catch (err) {
-    page.innerHTML += `<div class="empty-state"><p>${err.message}</p></div>`;
+    page.innerHTML += `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
   }
 }
 
@@ -156,7 +156,7 @@ function _renderConcentracao(conc, porPapel) {
     return `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         <div style="width:130px;font-size:12px;font-weight:600;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-                    background:${bg};border-radius:4px;padding:2px 6px">${p.papel}</div>
+                    background:${bg};border-radius:4px;padding:2px 6px">${esc(p.papel)}</div>
         <div style="font-size:12px;font-family:monospace;width:80px;text-align:right;color:var(--text-primary)">${fmtBRL(p.ticket_medio)}</div>
         <div style="font-size:11px;color:var(--text-tertiary);width:28px;text-align:right">${pct.toFixed(0)}%</div>
       </div>`;
@@ -215,10 +215,10 @@ function _renderTabelaRevendedores(lista) {
   }).join("");
 
   const tbody = sorted.map((r, i) => `
-    <tr class="rev-row" data-cod="${r.codigo}" style="cursor:pointer">
+    <tr class="rev-row" data-cod="${esc(r.codigo)}" style="cursor:pointer">
       <td>
-        <div style="font-size:13px">${r.nome}</div>
-        <div class="secondary" style="font-size:11px;font-family:monospace">${r.codigo}</div>
+        <div style="font-size:13px">${esc(r.nome)}</div>
+        <div class="secondary" style="font-size:11px;font-family:monospace">${esc(r.codigo)}</div>
       </td>
       <td>${_papelBadgeInline(r.papel)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(r.total_faturado)}</td>
@@ -281,7 +281,7 @@ async function abrirDrawerRevendedor(codigo) {
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
         ${d.por_iaf.map(x => `
           <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
-            <div style="font-size:13px;color:var(--text-secondary)">${x.classificacao}</div>
+            <div style="font-size:13px;color:var(--text-secondary)">${esc(x.classificacao)}</div>
             <div style="font-size:15px;font-weight:600;font-family:monospace;color:${_iafColor(x.classificacao)}">${fmtBRL(x.total)}</div>
           </div>
         `).join("")}
@@ -295,7 +295,7 @@ async function abrirDrawerRevendedor(codigo) {
           const pct = d.total_faturado ? (v.total / d.total_faturado * 100) : 0;
           return `
           <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:140px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.nome}</div>
+            <div style="width:140px;font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.nome)}</div>
             <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
               <div style="width:${pct.toFixed(1)}%;height:100%;background:var(--accent-blue);border-radius:4px;opacity:0.7"></div>
             </div>
@@ -325,7 +325,7 @@ async function abrirDrawerRevendedor(codigo) {
           <tbody>
             ${d.top_produtos.map(p => `
               <tr>
-                <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis">${p.nome}</td>
+                <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(p.nome)}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtNum(p.quantidade)}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtBRL(p.total)}</td>
               </tr>
@@ -346,9 +346,9 @@ async function abrirDrawerRevendedor(codigo) {
           <tbody>
             ${d.pedidos.map(p => `
               <tr>
-                <td class="mono secondary" style="font-size:12px">${p.codigo}</td>
-                <td class="secondary" style="font-size:12px">${p.data || "—"}</td>
-                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${p.vendedor || "—"}</td>
+                <td class="mono secondary" style="font-size:12px">${esc(p.codigo)}</td>
+                <td class="secondary" style="font-size:12px">${esc(p.data || "—")}</td>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${esc(p.vendedor || "—")}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtBRL(p.total)}</td>
                 <td class="mono" style="text-align:right;font-size:12px">${fmtNum(p.itens)}</td>
               </tr>
@@ -374,7 +374,7 @@ async function abrirDrawerRevendedor(codigo) {
     }
 
   } catch (err) {
-    content.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`;
+    content.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
   }
 }
 
@@ -382,7 +382,7 @@ function _papelBadgeInline(papel) {
   if (!papel) return `<span class="badge badge-geral">—</span>`;
   const { cor, bg } = _corPapel(papel);
   return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;
-                        color:${cor};background:${bg};white-space:nowrap">${papel}</span>`;
+                        color:${cor};background:${bg};white-space:nowrap">${esc(papel)}</span>`;
 }
 
 // Cores por tier de papel

@@ -9,6 +9,11 @@ let _dadosTotal  = 0;
 let _dadosTotalPages = 1;
 
 async function renderDados() {
+  // Busca e página de visitas anteriores não podem vazar: o input renderiza
+  // vazio, então manter o estado antigo aplicaria um filtro invisível (e uma
+  // página possivelmente além do fim da lista).
+  _dadosSearch = "";
+  _dadosPage = 1;
   const page = document.getElementById("page-dados");
   page.innerHTML = `
     <div class="page-header">
@@ -73,7 +78,7 @@ async function _carregarDados() {
     _renderPaginacao();
   } catch (err) {
     document.getElementById("dados-table-wrap").innerHTML =
-      `<div class="empty-state"><p>${err.message}</p></div>`;
+      `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
   }
 }
 
@@ -124,6 +129,8 @@ function _renderTabelaDados(lista) {
         val = _badgeClfSmall(val);
       } else if (c.key === "metodo_match") {
         val = _badgeMatchSmall(val);
+      } else {
+        val = esc(val);
       }
 
       return `<td class="${cls}" style="${style}">${val}</td>`;
@@ -186,7 +193,7 @@ function _badgeClfSmall(clf) {
     "IAF Make":    "badge-make",
     "Geral":       "badge-geral",
   };
-  return `<span class="badge ${map[clf] || "badge-geral"}">${clf}</span>`;
+  return `<span class="badge ${map[clf] || "badge-geral"}">${esc(clf)}</span>`;
 }
 
 function _badgeMatchSmall(m) {
@@ -197,7 +204,7 @@ function _badgeMatchSmall(m) {
     "nenhum":         ["badge-none",   "—"],
   };
   const [cls, label] = map[m] || ["badge-none", m];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
 function _debounce(fn, ms) {

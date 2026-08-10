@@ -57,11 +57,11 @@ function _renderComparativoUI() {
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:12px;color:var(--text-tertiary)">De:</span>
         <select id="comp-ciclo-a" class="search-input" style="width:auto;padding:6px 10px">
-          ${ciclos.map(c => `<option value="${c}" ${c === _compCicloA ? "selected" : ""}>${c}</option>`).join("")}
+          ${ciclos.map(c => `<option value="${esc(c)}" ${c === _compCicloA ? "selected" : ""}>${esc(c)}</option>`).join("")}
         </select>
         <span style="font-size:12px;color:var(--text-tertiary)">Para:</span>
         <select id="comp-ciclo-b" class="search-input" style="width:auto;padding:6px 10px">
-          ${ciclos.map(c => `<option value="${c}" ${c === _compCicloB ? "selected" : ""}>${c}</option>`).join("")}
+          ${ciclos.map(c => `<option value="${esc(c)}" ${c === _compCicloB ? "selected" : ""}>${esc(c)}</option>`).join("")}
         </select>
       </div>
       <div style="display:flex;gap:4px">
@@ -130,11 +130,11 @@ function _renderCompTabela() {
 
   document.getElementById("comp-summary").innerHTML = `
     <div class="kpi-card">
-      <div class="kpi-header"><span class="kpi-label">${_compCicloA}</span><div class="kpi-icon blue"><i data-lucide="calendar"></i></div></div>
+      <div class="kpi-header"><span class="kpi-label">${esc(_compCicloA)}</span><div class="kpi-icon blue"><i data-lucide="calendar"></i></div></div>
       <div class="kpi-value">${fmtBRL(totalA)}</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-header"><span class="kpi-label">${_compCicloB}</span><div class="kpi-icon ${totalDiff >= 0 ? "green" : "orange"}"><i data-lucide="calendar"></i></div></div>
+      <div class="kpi-header"><span class="kpi-label">${esc(_compCicloB)}</span><div class="kpi-icon ${totalDiff >= 0 ? "green" : "orange"}"><i data-lucide="calendar"></i></div></div>
       <div class="kpi-value">${fmtBRL(totalB)}</div>
     </div>
     <div class="kpi-card">
@@ -161,11 +161,13 @@ function _renderCompTabela() {
     const barMax = Math.max(...rows.map(x => Math.max(x.a, x.b)));
     const wA = barMax ? (r.a / barMax * 100).toFixed(1) : 0;
     const wB = barMax ? (r.b / barMax * 100).toFixed(1) : 0;
-    const rowClick = _compView === "vendedor" && r.codigo
-      ? `style="cursor:pointer" onclick="abrirDrawerVendedor('${r.codigo}')"` : "";
+    // "?" é o balde sem vendedor (não tem detalhe); o código viaja em data-cod
+    // em vez de onclick inline, que quebrava com aspas no valor.
+    const rowClick = _compView === "vendedor" && r.codigo && r.codigo !== "?"
+      ? `class="comp-row" data-cod="${esc(r.codigo)}" style="cursor:pointer"` : "";
     return `
       <tr ${rowClick}>
-        <td style="font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.label}</td>
+        <td style="font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.label)}</td>
         <td style="text-align:right" class="mono">${fmtBRL(r.a)}</td>
         <td style="text-align:right" class="mono">${fmtBRL(r.b)}</td>
         <td style="min-width:140px;padding:8px 12px">
@@ -196,8 +198,8 @@ function _renderCompTabela() {
       <thead>
         <tr>
           <th>${_compView === "vendedor" ? "Vendedor" : "Categoria"}</th>
-          <th style="text-align:right">${_compCicloA}</th>
-          <th style="text-align:right">${_compCicloB}</th>
+          <th style="text-align:right">${esc(_compCicloA)}</th>
+          <th style="text-align:right">${esc(_compCicloB)}</th>
           <th>Comparativo</th>
           <th style="text-align:right">Variação R$</th>
           <th style="text-align:right">Variação %</th>
@@ -206,6 +208,10 @@ function _renderCompTabela() {
       <tbody>${tbody}</tbody>
     </table>
   `;
+
+  document.querySelectorAll("#comp-table-wrap .comp-row").forEach(tr => {
+    tr.addEventListener("click", () => abrirDrawerVendedor(tr.dataset.cod));
+  });
 }
 
 function _exportarComparativo() {

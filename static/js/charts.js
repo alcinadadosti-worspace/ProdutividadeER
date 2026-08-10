@@ -124,6 +124,20 @@ function donutOptions(extra = {}) {
 }
 
 /**
+ * Escapa texto de origem externa (planilha, API) para interpolação em innerHTML.
+ * Sem isso, um nome de produto/vendedor com <, & ou aspas quebra a renderização
+ * e permite injetar HTML na página.
+ */
+function esc(valor) {
+  return String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Formata número como abreviação (1K, 1M, etc.)
  */
 function fmtAbrev(valor) {

@@ -374,10 +374,10 @@ async function _pageCancRecarregar() {
     return `
       <tr class="canc-row" data-idx="${idx}">
         <td class="mono">${_fmtCodigoPedido(c.codigo)}</td>
-        <td>${c.vendedor || "—"}</td>
-        <td>${c.revendedor || "—"}</td>
-        <td class="mono">${c.ciclo || "—"}</td>
-        <td class="mono">${c.data || "—"}</td>
+        <td>${esc(c.vendedor || "—")}</td>
+        <td>${esc(c.revendedor || "—")}</td>
+        <td class="mono">${esc(c.ciclo || "—")}</td>
+        <td class="mono">${esc(c.data || "—")}</td>
         <td class="mono" style="text-align:right">${fmtNum(c.qtd_itens)}</td>
         <td class="mono" style="text-align:right">${fmtBRL(c.total_faturado)}</td>
         <td>${badge}</td>
@@ -424,9 +424,9 @@ async function _pageCancRecarregar() {
       const det = wrap.querySelector(`tr[data-detail="${idx}"]`);
       if (!det) return;
       det.classList.toggle("hidden");
-      const icon = btn.querySelector("i");
-      if (icon) icon.setAttribute("data-lucide",
-        det.classList.contains("hidden") ? "chevron-down" : "chevron-up");
+      // Após o primeiro createIcons() o <i> vira <svg>, então trocar o
+      // atributo do <i> não funciona — recria o ícone do zero.
+      btn.innerHTML = `<i data-lucide="${det.classList.contains("hidden") ? "chevron-down" : "chevron-up"}"></i>`;
       lucide.createIcons();
     });
   });
@@ -456,14 +456,14 @@ function _renderLinhasCanc(linhas) {
   }
   const rows = linhas.map(l => `
     <tr>
-      <td class="mono secondary">${l.CodigoProduto || "—"}</td>
-      <td>${l.Produto || "—"}</td>
-      <td>${l.marca || "—"}</td>
+      <td class="mono secondary">${esc(l.CodigoProduto || "—")}</td>
+      <td>${esc(l.Produto || "—")}</td>
+      <td>${esc(l.marca || "—")}</td>
       <td class="mono" style="text-align:right">${fmtNum(l.Quantidade || 0)}</td>
       <td class="mono" style="text-align:right">${fmtBRL(l.TotalPraticado || 0)}</td>
-      <td>${l.NotaFiscal || "—"}</td>
-      <td>${l.PlanoPagamento || "—"}</td>
-      <td>${l.Unidade || "—"}</td>
+      <td>${esc(l.NotaFiscal || "—")}</td>
+      <td>${esc(l.PlanoPagamento || "—")}</td>
+      <td>${esc(l.Unidade || "—")}</td>
     </tr>
   `).join("");
   return `
