@@ -4,7 +4,7 @@ Fluxo:
   1. Cruza com `produtos`   → sabe se o item está no catálogo + pega marca
   2. Cruza com `iaf_cabelos` → classifica como IAF Cabelos
   3. Cruza com `iaf_make`    → classifica como IAF Make
-  4. Fallbacks por nome      → Siàge / palavras-chave Make
+  4. Fallbacks por nome      → capilar / palavras-chave Make
   5. Sem match               → Geral
 """
 
@@ -12,8 +12,34 @@ import re
 import sqlite3
 from processador import normalizar_sku
 
-# Palavras-chave para fallback Siàge Cabelos
+# ─── Heurística IAF Cabelos pelo nome do produto ──────────────────────────────
+# Palavras que acompanham a marca Siàge na regra histórica (ver _contem_siage).
 PALAVRAS_SIAGE = {"KIT", "COMB", "SHAMP", "COND"}
+
+# As listas iaf_cabelos/iaf_make vêm da marca e não trazem NENHUM combo: o
+# pacote é vendido no lugar dos componentes, e são os componentes que estão
+# listados. Por isso todo combo depende deste fallback — e por isso ele só
+# vale para pacote. Produto individual continua valendo o que a lista diz:
+# shampoo infantil fora da lista fica fora do indicador, de propósito.
+INDICADORES_PACOTE = (
+    "COMBO", "COMB", "KIT", "ESTOJO", "ESTJ", "PRESENTE",
+)
+
+# Marcadores capilares dentro do nome do pacote.
+INDICADORES_CABELOS = (
+    "SIAGE", "SIÀGE", "MATCH", "CRONOLOGY", "HAIRPLASTIA",
+    "SHAMPOO", "SHAMPO", "SHAMP", "SHP",
+    "CONDICIONADOR", "CONDICION", "COND", "CND",
+    "CABELO", "CAPILAR", "CACHO", "HAIR",
+    "ANTIQUEDA", "ANTICASPA", "SCALP",
+)
+
+# Pacotes que trazem marcador capilar mas não contam como cabelo:
+# "PERFECT MATCH" é linha de batom, não a linha capilar MATCH; shampoo de
+# pet e de barba são outra categoria.
+EXCLUSOES_CABELOS = (
+    "PERFECT MATCH", "PETS", "AU MIGOS", "BARBA",
+)
 
 # ─── Heurística IAF Make pelo nome do produto ─────────────────────────────────
 # Exclusões: se o nome bater em qualquer um destes, NÃO é maquiagem.
@@ -74,6 +100,9 @@ CATEGORIAS_KEYWORDS = [
         "TRAT CAP", "CONDICIONADOR", "QUERATINA", "CAPILAR",
         "SHAMPOO", "SHAMPO", "CONDICION", "SIÀGE", "SIAGE",
         "CABELO", "CACHOS", "MATCH", "AMACI", "HAIR", "SHAMP", "COND",
+        # Abreviações usadas nos nomes de combo: "COMBO NUTRI ACID SHP+CND".
+        # Só funcionam porque _tokenizar quebra no "+".
+        "SHP", "CND",
     ]),
     ("Maquiagem", [
         "MASC CILIO", "BASE STICK", "BASE LIQ", "BLUSH LIQ", "BAT LIQ",
@@ -125,8 +154,12 @@ CATEGORIAS_KEYWORDS = [
 
 
 def _tokenizar(nome):
-    """Divide o nome em tokens separados por espaços e pontuação."""
-    return re.split(r"[\s/\-_,\.\(\)]+", nome.upper())
+    """Divide o nome em tokens separados por espaços e pontuação.
+
+    O "+" separa os itens de um combo ("SHP+CND", "SH+COND"): sem quebrar nele
+    o token inteiro não começa por nenhuma keyword e o combo caía em "Outros".
+    """
+    return re.split(r"[\s/\-_,\.\(\)\+&]+", nome.upper())
 
 
 def classificar_categoria(nome_produto):
@@ -217,10 +250,40 @@ def criar_indice_iaf(caminho_db):
 
 
 def _contem_siage(nome):
+    """Regra histórica: nome traz a marca Siàge escrita + palavra capilar."""
     n = nome.upper()
     if "SIAGE" not in n and "SIÀGE" not in n:
         return False
     return any(p in n for p in PALAVRAS_SIAGE)
+
+
+def _e_pacote_capilar(nome):
+    """O nome indica um pacote (combo/kit/estojo) de itens capilares?"""
+    tokens = [t for t in _tokenizar(nome) if t]
+    if not any(t.startswith(p) for t in tokens for p in INDICADORES_PACOTE):
+        return False
+    return any(t.startswith(c) for t in tokens for c in INDICADORES_CABELOS)
+
+
+def is_hair_product(nome):
+    """Heurística: o nome do produto conta como IAF Cabelos?
+
+    Só deve ser chamada quando o SKU não foi encontrado em iaf_cabelos/iaf_make.
+
+    Duas portas. A histórica exige a marca "Siàge" escrita no nome, e por isso
+    pegava só metade dos combos: "COMBO SIAGE NUTRI ROSE SHP+CND" entrava e
+    "COMBO NUTRI ACID SHP+CND" — mesma linha, mesma prateleira — caía em Geral.
+    A segunda porta cobre o pacote independentemente da marca aparecer no nome.
+
+    Fica de fora o demonstrador ("CJ SCH SIAGE ... 3x7ml"): sachê de amostra não
+    é venda de cabelo — exceto os que a porta histórica já pegava, mantidos para
+    não mexer no indicador de quem já os tinha contados.
+    """
+    if not nome:
+        return False
+    if any(excl in nome.upper() for excl in EXCLUSOES_CABELOS):
+        return False
+    return _contem_siage(nome) or _e_pacote_capilar(nome)
 
 
 def is_makeup_product(nome):
@@ -244,7 +307,7 @@ def cruzar_vendas(vendas, indice_produtos, indice_iaf):
       - marca          : marca do produto (da tabela `produtos`)
       - em_catalogo    : True se o SKU existe na tabela `produtos`
       - classificacao_iaf : "IAF Cabelos" | "IAF Make" | "Geral"
-      - metodo_match   : "sku" | "fallback_siage" | "fallback_make" | "nenhum"
+      - metodo_match   : "sku" | "fallback_cabelos" | "fallback_make" | "nenhum"
     """
     for venda in vendas:
         sku_norm = venda.get("CodigoProduto_normalizado", "")
@@ -268,10 +331,10 @@ def cruzar_vendas(vendas, indice_produtos, indice_iaf):
             venda["classificacao_iaf"] = indice_iaf[sku_norm]["origem"]
             venda["metodo_match"] = "sku"
 
-        # 2. Fallback Siàge
-        elif _contem_siage(nome_produto):
+        # 2. Fallback capilar (pega os combos, que nunca estão nas listas IAF)
+        elif is_hair_product(nome_produto):
             venda["classificacao_iaf"] = "IAF Cabelos"
-            venda["metodo_match"] = "fallback_siage"
+            venda["metodo_match"] = "fallback_cabelos"
 
         # 3. Fallback Make (heurística pelo nome, com exclusões)
         elif is_makeup_product(nome_produto):

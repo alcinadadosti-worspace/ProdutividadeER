@@ -58,8 +58,8 @@ async function renderIaf() {
           <div class="match-label">Por SKU</div>
         </div>
         <div class="match-item">
-          <div class="match-count text-blue">${fmtNum(d.metodos_match.fallback_siage || 0)}</div>
-          <div class="match-label">Fallback Siàge</div>
+          <div class="match-count text-blue">${fmtNum(d.metodos_match.fallback_cabelos || 0)}</div>
+          <div class="match-label">Fallback Cabelos</div>
         </div>
         <div class="match-item">
           <div class="match-count" style="color:var(--accent-purple)">${fmtNum(d.metodos_match.fallback_make || 0)}</div>

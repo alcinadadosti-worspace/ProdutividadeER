@@ -170,7 +170,7 @@ function _badgeClf(clf) {
 function _badgeMatch(m) {
   const map = {
     "sku":            ["badge-sku",     "SKU"],
-    "fallback_siage": ["badge-siage",   "Siàge"],
+    "fallback_cabelos": ["badge-siage",   "Cabelos FB"],
     "fallback_make":  ["badge-make-fb", "Make FB"],
     "nenhum":         ["badge-none",    "—"],
   };
