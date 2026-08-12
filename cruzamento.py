@@ -108,6 +108,11 @@ CATEGORIAS_KEYWORDS = [
         # Só funcionam porque _tokenizar quebra no "+".
         "SHP", "CND",
     ]),
+    # Barba vem antes de Maquiagem: balm e creme pós-barba batiam com "BALM" e
+    # "CREME" e viravam maquiagem — 25 produtos, incluindo a linha Malbec.
+    ("Barba", [
+        "BARBA", "BARB",
+    ]),
     ("Maquiagem", [
         "MASC CILIO", "BASE STICK", "BASE LIQ", "BLUSH LIQ", "BAT LIQ",
         "FAC STICK", "HID LAB", "OIL SHIN", "PLT MULTIF", "PO COMP",
@@ -118,9 +123,6 @@ CATEGORIAS_KEYWORDS = [
     ("Perfumaria", [
         "PARFUM", "PARFUN", "EDP", "EAU", "COL",
     ]),
-    ("Barba", [
-        "BARBA", "BARB",
-    ]),
     ("Acessórios", [
         "MASSAGEADOR", "VAPORIZADOR", "FRASQUEIRA", "NECESSAIRE",
         "APONTADOR", "CURVADOR", "PINCEIS", "ESPELHO", "ESPONJA",
@@ -128,6 +130,13 @@ CATEGORIAS_KEYWORDS = [
         "BOLSA", "ESPNJ", "PORTA", "LENCO", "LUVA", "CASE", "CLIP",
     ]),
     ("Cuidados com a Pele", [
+        # Combo da linha Instance (hidratante corporal Eudora). Precisa ser
+        # explícito: o nome do combo não diz "creme" nem "corporal", então caía
+        # nas keywords curtas de categorias abaixo — "PRALINE" batia com o "PR"
+        # de Solar, "DESCONTO" com o "DES" de Desodorantes, "SACOLA" virava
+        # Embalagens. O produto individual não entra aqui: sabonete e aerossol
+        # da mesma linha continuam achando a categoria certa deles.
+        "COMBO INSTANCE", "COMB INSTANCE",
         "INSTANCE CR", "CORPORAL", "CREME", "CRÈME", "MAOS", "CPO", "CREM", "HID", "MAO",
     ]),
     ("Cuidados Faciais", [
