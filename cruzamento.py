@@ -21,8 +21,12 @@ PALAVRAS_SIAGE = {"KIT", "COMB", "SHAMP", "COND"}
 # listados. Por isso todo combo depende deste fallback — e por isso ele só
 # vale para pacote. Produto individual continua valendo o que a lista diz:
 # shampoo infantil fora da lista fica fora do indicador, de propósito.
+# Sachê entra junto: "CJ SCH SIAGE ... 3x7ml VDA" é conjunto vendável, não
+# amostra de graça — é venda de cabelo e conta. Antes contava ou não conforme
+# o rótulo ter abreviado "COND" ou "CON", que é o que a porta histórica olhava.
 INDICADORES_PACOTE = (
     "COMBO", "COMB", "KIT", "ESTOJO", "ESTJ", "PRESENTE",
+    "CJ", "SCH", "SACHET", "CONJ",
 )
 
 # Marcadores capilares dentro do nome do pacote.
@@ -273,11 +277,11 @@ def is_hair_product(nome):
     Duas portas. A histórica exige a marca "Siàge" escrita no nome, e por isso
     pegava só metade dos combos: "COMBO SIAGE NUTRI ROSE SHP+CND" entrava e
     "COMBO NUTRI ACID SHP+CND" — mesma linha, mesma prateleira — caía em Geral.
-    A segunda porta cobre o pacote independentemente da marca aparecer no nome.
+    A segunda porta cobre o pacote independentemente da marca aparecer no nome,
+    e vale também para o conjunto de sachês, que é vendável.
 
-    Fica de fora o demonstrador ("CJ SCH SIAGE ... 3x7ml"): sachê de amostra não
-    é venda de cabelo — exceto os que a porta histórica já pegava, mantidos para
-    não mexer no indicador de quem já os tinha contados.
+    O que decide é o nome do produto — o combo não é aberto nos componentes.
+    Um pacote misto (cabelo + make) conta inteiro como cabelo.
     """
     if not nome:
         return False
