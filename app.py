@@ -620,7 +620,7 @@ _ADMIN_SALT = "alcina-admin-v1|"
 _ADMIN_HASHES = {
     ESCOPO_GERAL:                 "05f64fa7d9ba0b393a8de9ecf0614876912f199457aea60e1a8b3fe545860586",
     "Matriz Penedo":              "29b4f52eecca90dc4e005eb7a2a585e973fcab864169a74a23a3ba6e8a2e6cb1",
-    "Filial Palmeira dos Índios": "67f5ea384e32af9a773beb8097577a9cf0c2e5962a3aa24e1e2104db21564851",
+    "Filial Palmeira dos Índios": "d2308258a0b0734daab8e859aed9cc475ef3427a1cf1bc4800676894965ef4f2",
 }
 _ADMIN_ENV = {
     ESCOPO_GERAL:                 "ADMIN_SENHA_GERAL",
