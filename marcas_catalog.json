@@ -3722,5 +3722,37 @@
   "88700": {
     "nome": "CBEM LOC DES HID CPO PESSEG N/FORM 400ml",
     "marca": "oBoticário"
+  },
+  "95566": {
+    "nome": "SIAGE MASC CAP RESG/IMED MINI 30ml",
+    "marca": "Eudora"
+  },
+  "96600": {
+    "nome": "NIINA SCRT BAT GLASSY CLOSE UP 2ml",
+    "marca": "Eudora"
+  },
+  "96601": {
+    "nome": "NIINA SCRT BAT GLASSY ZOOM IN 2ml",
+    "marca": "Eudora"
+  },
+  "95562": {
+    "nome": "SIAGE COND PRO/CRON MINI 30ml",
+    "marca": "Eudora"
+  },
+  "95561": {
+    "nome": "SIAGE SHAMP PRO/CRON MINI 30ml",
+    "marca": "Eudora"
+  },
+  "95564": {
+    "nome": "SIAGE COND NUTR AC/COMPLEX MINI 30ml",
+    "marca": "Eudora"
+  },
+  "95563": {
+    "nome": "SIAGE SHAMP NUTR AC/COMPLEX MINI 30ml",
+    "marca": "Eudora"
+  },
+  "95565": {
+    "nome": "SIAGE SHAMP RESG/IMED MINI 30ml",
+    "marca": "Eudora"
   }
 }
